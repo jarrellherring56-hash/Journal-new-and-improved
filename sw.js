@@ -1,6 +1,6 @@
 // Offline support: the app shell and CDN libraries are cached so the journal
 // opens without a network. Data calls (Supabase, /api) are never cached.
-const CACHE = "journal-v2";
+const CACHE = "journal-v3";
 const PRECACHE = ["/", "/index.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {

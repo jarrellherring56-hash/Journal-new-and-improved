@@ -51,6 +51,7 @@ const THEMES = {
   afterhours: { label: "After Hours", accent: "#F20D18", rgb: "242,13,24",   dark: "#BF0710", btnText: "#FFFFFF", pack: "cine" },
   dawnfm:     { label: "Dawn FM",     accent: "#8FB4FF", rgb: "143,180,255", dark: "#5E8AE6", btnText: "#060B1A", pack: "retro" },
   alter:      { label: "Alter",       accent: "#FF2438", rgb: "255,36,56",   dark: "#C2101F", btnText: "#FFFFFF", pack: "ritual" },
+  akatsuki:   { label: "Akatsuki",    accent: "#DB2B34", rgb: "219,43,52",   dark: "#A8121C", btnText: "#FFFFFF", pack: "ember" },
 };
 const BACKGROUNDS = {
   slate:    { label: "Slate",       bg: "#0A0B0E", card: "#111318", line: "#20242C", dash: "#2A2F3A", inputbg: "#0E1014", ink: "#F2F3F5", body: "#D7DAE0", faint: "#7C8390", title: "#F7F8FA", strong: "#F2F3F5", strongRgb: "242,243,245", placeholder: "#4B515C" },
@@ -67,6 +68,7 @@ const BACKGROUNDS = {
   trilogyn:  { label: "Trilogy Noir", bg: "#070708", card: "#101012", line: "#242428", dash: "#2C2C31", inputbg: "#0B0B0D", ink: "#F2F2F3", body: "#E3E3E6", faint: "#8E8E96", title: "#FBFBFC", strong: "#F4F4F5", strongRgb: "244,244,245", placeholder: "#68686F" },
   afterhrs:  { label: "After Hours",  bg: "#0B0304", card: "#160709", line: "#331116", dash: "#3A151B", inputbg: "#100405", ink: "#F8EFF0", body: "#EFE0E2", faint: "#A67F84", title: "#FFF9F9", strong: "#F8F0F0", strongRgb: "248,240,240", placeholder: "#7A5257" },
   altar:     { label: "Dark Altar",   bg: "#04050A", card: "#0A0C15", line: "#1E2233", dash: "#262B40", inputbg: "#070910", ink: "#F1F2F8", body: "#DDE0EC", faint: "#7E86A0", title: "#F8F9FF", strong: "#F1F3FA", strongRgb: "241,243,250", placeholder: "#4E5570" },
+  ember:     { label: "Ember Dusk",   bg: "#0B0706", card: "#180F0B", line: "#341F17", dash: "#3D2519", inputbg: "#110A07", ink: "#F7EFE9", body: "#ECE0D6", faint: "#A88A78", title: "#FFF9F4", strong: "#F7EFE9", strongRgb: "247,239,233", placeholder: "#7C6151" },
 };
 // One-tap album looks: accent + backdrop + animated scene together.
 const ALBUM_PRESETS = [
@@ -78,6 +80,7 @@ const ALBUM_PRESETS = [
   { id: "afterhours", label: "After Hours",  theme: "afterhours", bg: "afterhrs" },
   { id: "dawnfm",     label: "Dawn FM",      theme: "dawnfm",     bg: "violet" },
   { id: "alter",      label: "Alter",        theme: "alter",      bg: "altar" },
+  { id: "akatsuki",   label: "Akatsuki",     theme: "akatsuki",   bg: "ember" },
 ];
 const DEFAULT_SETTINGS = {
   name: "Journal", theme: "mint", bg: "slate", tagline: "", customTagline: "",
@@ -97,6 +100,14 @@ const EMOTIONS = {
   neutral:    { label: "Neutral",    dot: "#9B93B0", bg: "rgba(155,147,176,0.13)", text: "#BDB6CE" },
 };
 const emotionOf = (e) => EMOTIONS[(e || "").toLowerCase()] || EMOTIONS.neutral;
+
+// A segment can carry several tags. Older entries only have a single `topic` —
+// this keeps both shapes working everywhere.
+const segTags = (seg) => {
+  if (!seg) return [];
+  if (Array.isArray(seg.tags) && seg.tags.length) return seg.tags;
+  return seg.topic ? [seg.topic] : [];
+};
 
 // mood valence for the trend line: brighter (+2) … heavier (−2)
 const VALENCE = { happy: 2, excited: 2, hopeful: 1.5, calm: 1, nostalgic: 0.5, neutral: 0, anxious: -1, frustrated: -1, sad: -1.5, angry: -2 };
@@ -254,7 +265,7 @@ function buildVibeProfile(days) {
   let count = 0;
   eachSegment(days, (k, entry, seg) => {
     count++;
-    if (seg.topic) topics[seg.topic] = (topics[seg.topic] || 0) + 1;
+    for (const t of segTags(seg)) topics[t] = (topics[t] || 0) + 1;
     const m = (seg.emotion || "neutral").toLowerCase();
     moods[m] = (moods[m] || 0) + 1;
   });
@@ -290,14 +301,21 @@ async function callClaude(prompt, maxTokens = 1000) {
 
 async function classifyEntry(text, vibeText, existingTopics = []) {
   const topicHint = existingTopics.length
-    ? `\nIMPORTANT for organization: this journal already has these topic labels: ${existingTopics.join(", ")}. If a segment fits one of them, REUSE that exact label (same spelling) instead of inventing a similar new one. Only create a new label when nothing existing fits.`
+    ? `\nIMPORTANT for organization: this journal already uses these tags: ${existingTopics.join(", ")}. If a segment fits one of them, REUSE that exact tag (same spelling) instead of inventing a near-duplicate. Only create a new tag when nothing existing fits.`
     : "";
-  const raw = await callClaude(`You label journal writing. Split the entry below into segments wherever the topic or emotion shifts (often sentence by sentence, but keep consecutive sentences about the same thing together as one segment). Segments may contain links — keep them intact.
+  const raw = await callClaude(`You label journal writing. Split the entry below into segments wherever the subject or emotion shifts (often sentence by sentence, but keep consecutive sentences about the same thing together as one segment). Segments may contain links — keep them intact.
 
 For each segment return:
 - "text": the segment's exact text from the entry
-- "topic": a short 1-3 word label (e.g. "Day Trading", "Family Memory", "Links", "Work Stress")
+- "tags": an array of 2-4 SPECIFIC tags describing what this segment is really about
 - "emotion": exactly one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral${topicHint}
+
+TAG RULES — this is the most important part:
+- Each tag is 1-3 words, Title Case.
+- Be SPECIFIC and personal, never generic. NEVER use vague filler tags like "Daily Reflection", "Journal Entry", "Personal Thoughts", "Reflection", "Notes", "Life", "Update", "Misc".
+- Name the actual subject AND the emotional texture. Good examples: "Relationship Loss", "Family Frustration", "Money Stress", "Missing Her", "Work Burnout", "Self Doubt", "Late Night Spiral", "Old Friends", "Gym Progress", "Day Trading", "Grief", "Feeling Behind", "Small Win".
+- Mix layers: at least one tag for the concrete subject (the person, place, activity) and at least one for the underlying feeling or theme. A segment about arguing with a parent might be ["Family Frustration", "Feeling Unheard", "Mom"].
+- Tags should be reusable across entries so patterns build up over time.
 
 Also write "tagline": one short line (under 14 words, no quotes, no emoji) for the top of this person's journal. Make it play off what they keep writing about and their overall vibe, in a cool, late-night tone that speaks to them directly. Their journal profile so far (including this entry): ${vibeText}
 
@@ -306,13 +324,24 @@ Respond with ONLY a raw JSON object: {"segments": [...], "tagline": "..."} — n
 Entry:
 """${text}"""`, 8000);
   const parsed = extractJSONObject(raw);
+  const BAD_TAGS = ["daily reflection", "journal entry", "personal thoughts", "reflection", "notes", "note", "life", "update", "misc", "general", "thoughts", "entry"];
   const segments = (parsed.segments || [])
     .filter((s) => s && s.text)
-    .map((s) => ({
-      text: String(s.text).trim(),
-      topic: String(s.topic || "Notes").trim(),
-      emotion: String(s.emotion || "neutral").toLowerCase(),
-    }));
+    .map((s) => {
+      let tags = Array.isArray(s.tags) ? s.tags : (s.topic ? [s.topic] : []);
+      tags = tags
+        .map((t) => String(t || "").trim())
+        .filter(Boolean)
+        .filter((t) => !BAD_TAGS.includes(t.toLowerCase()))
+        .slice(0, 4);
+      if (!tags.length) tags = ["Unsorted"];
+      return {
+        text: String(s.text).trim(),
+        tags,
+        topic: tags[0], // primary tag — keeps older code/data paths working
+        emotion: String(s.emotion || "neutral").toLowerCase(),
+      };
+    });
   return { segments, tagline: String(parsed.tagline || "").trim() };
 }
 
@@ -500,7 +529,7 @@ function buildDigest(days, numDays = 7) {
   let out = [];
   for (const k of keys) {
     for (const entry of days[k].entries || []) {
-      const topics = [...new Set((entry.segments || []).map((s) => s.topic).filter(Boolean))].join("/");
+      const topics = [...new Set((entry.segments || []).flatMap(segTags))].join("/");
       const texts = (entry.segments || [])
         .filter((s) => !s.type || s.type === "text" || s.type === "qa")
         .map((s) => (s.type === "qa" ? s.q : s.text))
@@ -521,7 +550,9 @@ function itemPlainText(item) {
 const LG_CSS = `
   .lg-root { min-height: 100vh; display: flex; align-items: center; justify-content: center;
     background: radial-gradient(900px 420px at 50% -8%, rgba(60,230,164,0.09) 0%, transparent 60%), #0a0b0e;
-    font-family: 'Inter', system-ui, sans-serif; padding: 20px; }
+    font-family: 'Inter', system-ui, sans-serif;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) calc(20px + env(safe-area-inset-right, 0px))
+             calc(20px + env(safe-area-inset-bottom, 0px)) calc(20px + env(safe-area-inset-left, 0px)); }
   .lg-card { width: 100%; max-width: 380px; background: #111318; border: 1px solid #20242c;
     border-radius: 20px; padding: 26px; }
   .lg-title { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; letter-spacing: -.02em;
@@ -661,6 +692,7 @@ function ThemeIcon({ theme }) {
     afterhours: <path {...f} d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />,                                   /* crescent moon */
     dawnfm:     <g {...p}><path d="M3 19h18" /><path d="M7.5 19a4.5 4.5 0 0 1 9 0" /><path d="M12 4v3M4.8 8.2l1.5 1.5M19.2 8.2l-1.5 1.5" /></g>, /* sunrise */
     alter:      <g><circle cx="12" cy="12" r="8" {...p} /><circle cx="12" cy="12" r="2.4" {...f} /></g>,             /* halo ring */
+    akatsuki:   <g><circle cx="12" cy="12" r="8.5" {...p} /><circle cx="12" cy="12" r="2" {...f} /><circle cx="12" cy="5.6" r="1.5" {...f} /><circle cx="17.5" cy="15.2" r="1.5" {...f} /><circle cx="6.5" cy="15.2" r="1.5" {...f} /></g>, /* sharingan */
     mint:       <path {...p} d="M11 20C6 20 4 16 4 11c5 0 7 1 8 4 1-4 4-6 8-6 0 6-3 9-8 9z" />,                     /* leaf */
   };
   const book = <g {...p}><path d="M12 6c-1.6-1.3-4-2-7-2v13c3 0 5.4.7 7 2 1.6-1.3 4-2 7-2V4c-3 0-5.4.7-7 2z" /><path d="M12 6v13" /></g>;
@@ -935,9 +967,9 @@ Their week:
         const vibe = buildVibeProfile(days);
         const existingTopics = {};
         eachSegment(days, (k2, en, sg) => {
-          if (sg.topic) existingTopics[sg.topic] = (existingTopics[sg.topic] || 0) + 1;
+          for (const t of segTags(sg)) existingTopics[t] = (existingTopics[t] || 0) + 1;
         });
-        const topicList = Object.entries(existingTopics).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([t]) => t);
+        const topicList = Object.entries(existingTopics).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([t]) => t);
         let segments = [], tagline = "";
         try {
           const result = await classifyLongEntry(text, vibe.text, topicList);
@@ -948,7 +980,7 @@ Their week:
         }
         if (!segments.length) segments = [{ text, topic: "Notes", emotion: "neutral" }];
         for (const seg of segments) {
-          entrySegments.push({ id: uid(), type: "text", text: seg.text, topic: seg.topic, emotion: seg.emotion, time });
+          entrySegments.push({ id: uid(), type: "text", text: seg.text, tags: seg.tags, topic: seg.topic, emotion: seg.emotion, time });
         }
         if (tagline) updateSettings({ tagline });
       }
@@ -1346,7 +1378,7 @@ Digest:
       for (const entry of days[k].entries || []) {
         lines.push(`-- entry ${entry.time || ""} --`);
         for (const seg of entry.segments || []) {
-          lines.push(`  [${seg.topic || "Notes"} · ${seg.emotion || "neutral"}] ${itemPlainText(seg).replace(/\n/g, "\n    ")}`);
+          lines.push(`  [${segTags(seg).join(", ") || "Unsorted"} · ${seg.emotion || "neutral"}] ${itemPlainText(seg).replace(/\n/g, "\n    ")}`);
         }
       }
       lines.push("");
@@ -1383,13 +1415,13 @@ Digest:
 
   const allTopics = {};
   eachSegment(days, (k, en, sg) => {
-    if (sg.topic) allTopics[sg.topic] = (allTopics[sg.topic] || 0) + 1;
+    for (const t of segTags(sg)) allTopics[t] = (allTopics[t] || 0) + 1;
   });
   const topTopics = Object.entries(allTopics).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([t]) => t);
 
   const q = query.trim().toLowerCase();
   const segMatches = (seg) => {
-    const topicOk = !topicFilter || (seg.topic || "").toLowerCase() === topicFilter.toLowerCase();
+    const topicOk = !topicFilter || segTags(seg).some((t) => t.toLowerCase() === topicFilter.toLowerCase());
     const textOk = !q || itemPlainText(seg).toLowerCase().includes(q);
     const favOk = !favFilter || seg.fav;
     return topicOk && textOk && favOk;
@@ -1503,7 +1535,11 @@ Digest:
             var(--bg);
           color: var(--ink);
           font-family: var(--bodyfont);
-          padding: 28px clamp(16px, 4vw, 56px) 60px;
+          /* safe-area insets keep the header clear of the iPhone notch / Dynamic Island */
+          padding: calc(28px + env(safe-area-inset-top, 0px))
+                   calc(clamp(16px, 4vw, 56px) + env(safe-area-inset-right, 0px))
+                   calc(60px + env(safe-area-inset-bottom, 0px))
+                   calc(clamp(16px, 4vw, 56px) + env(safe-area-inset-left, 0px));
         }
         .xo-root ::selection { background: var(--accent); color: var(--btn-text); }
         .xo-shell { max-width: 1180px; margin: 0 auto; position: relative; z-index: 1; }
@@ -1643,6 +1679,13 @@ Digest:
         .xo-sidetopic { font: 500 10px var(--bodyfont); color: var(--faint); letter-spacing: 0.04em; white-space: nowrap; max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
         .xo-section-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
         .xo-topic { font: 600 10px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); background: var(--soft); border: 1px solid rgba(var(--accent-rgb), 0.4); padding: 3px 10px; border-radius: 99px; cursor: pointer; }
+        .xo-segtags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+        .xo-tag { font: 600 9.5px var(--bodyfont); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+          background: var(--soft); border: 1px solid rgba(var(--accent-rgb), 0.32); padding: 3px 9px; border-radius: 99px;
+          cursor: pointer; white-space: nowrap; transition: all .15s; }
+        .xo-tag:hover { border-color: rgba(var(--accent-rgb), 0.65); }
+        .xo-tag.on { background: var(--accent); color: var(--btn-text); border-color: var(--accent); }
+        .xo-tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
         .xo-chip { display: inline-flex; align-items: center; gap: 6px; font: 500 11.5px var(--bodyfont); padding: 3px 10px; border-radius: 99px; }
         .xo-chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 
@@ -1765,10 +1808,18 @@ Digest:
         .sk-ritual .xo-daycard { border-left: 2px solid rgba(var(--accent-rgb), 0.5); }
         .sk-ritual .xo-add { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.45); }
 
+        /* ember — Akatsuki: engraved, smouldering (dramatic serif, warm red glow, left-aligned) */
+        .xo-root.sk-ember { --disp: 'Cinzel', Georgia, serif; }
+        .sk-ember .xo-title { text-transform: uppercase; letter-spacing: 0.13em; font-weight: 700;
+          text-shadow: 0 0 16px rgba(var(--accent-rgb), 0.4), 0 0 40px rgba(var(--accent-rgb), 0.22); }
+        .sk-ember .xo-panel h3, .sk-ember .xo-dayhead h2, .sk-ember .xo-subhead { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+        .sk-ember .xo-tab { letter-spacing: 0.06em; }
+        .sk-ember .xo-kpi.hero .val { text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.4); }
+
         @media (max-width: 700px) {
           .sk-bold .xo-title { font-size: 22px; }
           .sk-bold .xo-kpi.hero .val, .sk-soft .xo-kpi.hero .val { font-size: 26px; }
-          .sk-ritual .xo-title { letter-spacing: 0.12em; }
+          .sk-ritual .xo-title, .sk-ember .xo-title { letter-spacing: 0.1em; }
         }
 
         /* ================= NEON SKIN — Kiss Land's late-night identity ================= */
@@ -1836,7 +1887,10 @@ Digest:
 
         /* ================= PHONE OPTIMIZATION (any skin) ================= */
         @media (max-width: 700px) {
-          .xo-root { padding: 16px 12px 88px; }
+          .xo-root { padding: calc(14px + env(safe-area-inset-top, 0px))
+                              calc(12px + env(safe-area-inset-right, 0px))
+                              calc(88px + env(safe-area-inset-bottom, 0px))
+                              calc(12px + env(safe-area-inset-left, 0px)); }
 
           /* header: brand + gear on top row, tabs as a swipeable segmented strip below */
           .xo-top { gap: 10px; margin-bottom: 10px; }
@@ -1923,7 +1977,7 @@ Digest:
         @media (prefers-reduced-motion: reduce) { .xo-lightbox { animation: none; } }
         .xo-lightimg { max-width: min(920px, 94vw); max-height: 82vh; border-radius: 14px; border: 1px solid rgba(var(--accent-rgb), 0.35); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); cursor: default; object-fit: contain; }
         .xo-lightcap { margin-top: 14px; color: var(--body); font-size: 13.5px; letter-spacing: 0.02em; }
-        .xo-lightclose { position: fixed; top: 16px; right: 18px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .xo-lightclose { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(18px + env(safe-area-inset-right, 0px)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .xo-lightclose:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); }
         .xo-chat { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 55vh; overflow-y: auto; scrollbar-width: thin; }
         .xo-msg { padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
@@ -2075,6 +2129,23 @@ Digest:
             radial-gradient(60% 70% at 50% 130%, rgba(var(--accent-rgb), 0.30), transparent 60%);
           animation: fxwave 7s ease-in-out infinite; }
         .m-alter .fx3 { inset: 0; box-shadow: inset 0 0 220px 40px rgba(0, 0, 0, 0.78), inset 0 -120px 160px -60px rgba(var(--accent-rgb), 0.22); }
+
+        /* Akatsuki — warm sunset window glow, drifting crimson leaves/embers, dusk vignette */
+        /* translateY by exactly one tile height (140px) = seamless GPU-composited loop (no per-frame repaint) */
+        @keyframes fxfall { from { transform: translateY(0); } to { transform: translateY(140px); } }
+        .m-akatsuki .fx1 { top: -8%; right: -6%; width: 58%; height: 92%;
+          background:
+            radial-gradient(72% 60% at 82% 28%, rgba(255, 150, 70, 0.20), transparent 60%),
+            radial-gradient(58% 52% at 86% 56%, rgba(var(--accent-rgb), 0.16), transparent 62%);
+          animation: fxbreathe 9s ease-in-out infinite; }
+        .m-akatsuki .fx2 { top: -160px; left: 0; right: 0; height: calc(100% + 300px);
+          background:
+            radial-gradient(circle at 20% 30%, rgba(var(--accent-rgb), 0.55) 0 2px, transparent 3px),
+            radial-gradient(circle at 62% 70%, rgba(255, 120, 55, 0.42) 0 1.6px, transparent 3px);
+          background-size: 95px 140px, 150px 140px;
+          will-change: transform;
+          animation: fxfall 11s linear infinite; }
+        .m-akatsuki .fx3 { inset: 0; box-shadow: inset 0 0 200px 30px rgba(0, 0, 0, 0.72), inset -120px 0 160px -70px rgba(255, 130, 55, 0.16); }
       `}</style>
 
       <div className="xo-fx" aria-hidden="true"><i className="fx1" /><i className="fx2" /><i className="fx3" /></div>
@@ -2493,20 +2564,9 @@ Digest:
                 </div>
                 {open && <div className="xo-daybody">
                 {entries.map((entry) => {
-                  const entryTopics = [...new Set(entry.segments.map((s) => s.topic).filter(Boolean))];
                   return (
                     <div className="xo-section" key={entry.id}>
                       <div className="xo-section-head">
-                        {entryTopics.map((t) => (
-                          <span
-                            key={t}
-                            className="xo-topic"
-                            title="Filter by this topic"
-                            onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
-                          >
-                            {t}
-                          </span>
-                        ))}
                         <span className="xo-entrytime">{entry.time}</span>
                       </div>
                       <div className="xo-flow">
@@ -2544,14 +2604,25 @@ Digest:
                                   {seg.type === "recap" && (
                                     <p className="xo-recap"><span className="xo-aibadge">RECAP</span>{seg.text}</p>
                                   )}
+                                  {segTags(seg).length > 0 && (
+                                    <div className="xo-segtags">
+                                      {segTags(seg).map((t) => (
+                                        <button
+                                          key={t}
+                                          className={topicFilter.toLowerCase() === t.toLowerCase() ? "xo-tag on" : "xo-tag"}
+                                          title="Filter by this tag"
+                                          onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
+                                        >
+                                          {t}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
                                 </>
                               )}
                             </div>
                             <div className="xo-segside">
                               <span className="xo-emolabel" style={{ color: e.dot }}>{e.label}</span>
-                              {entryTopics.length > 1 && seg.topic && (
-                                <span className="xo-sidetopic">{seg.topic}</span>
-                              )}
                               {!editing && (
                                 <span className="xo-segacts">
                                   <button
@@ -2650,7 +2721,7 @@ Digest:
                 <div className="xo-panel">
                   <h3>Rewind{rewind.seg.fav ? " ★" : ""}</h3>
                   <p className="xo-note" style={{ marginBottom: 8 }}>
-                    {prettyDate(rewind.day)}{rewind.seg.topic ? " · " + rewind.seg.topic : ""}
+                    {prettyDate(rewind.day)}{segTags(rewind.seg).length ? " · " + segTags(rewind.seg).join(" · ") : ""}
                   </p>
                   <div className="xo-rewindtext">
                     {itemPlainText(rewind.seg).slice(0, 280)}{itemPlainText(rewind.seg).length > 280 ? "…" : ""}
@@ -2691,7 +2762,7 @@ Digest:
                   {otd.map((o) => {
                     const ens = days[o.key].entries || [];
                     const allSegs = ens.flatMap((en) => en.segments || []);
-                    const topics = [...new Set(allSegs.map((s) => s.topic).filter(Boolean))].slice(0, 2).join(", ");
+                    const topics = [...new Set(allSegs.flatMap(segTags))].slice(0, 2).join(", ");
                     const first = allSegs.find((s) => !s.type || s.type === "text");
                     return (
                       <p className="xo-note" key={o.key} style={{ margin: "0 0 8px" }}>
