@@ -167,6 +167,9 @@ const SETTINGS_KEY = "daybook:settings:v1";
 const TRASH_KEY = "daybook:trash:v1";
 const GOALS_KEY = "daybook:goals:v1";
 const LETTER_KEY = "daybook:lastletter:v1";
+const SCHED_KEY = "daybook:schedule:v1";
+const NOTEPAD_KEY = "daybook:notepad:v1";
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const TRASH_DAYS = 30; // auto-purge after this many days
 const IMG_PREFIX = "daybook:img:";
 
@@ -287,16 +290,21 @@ function extractJSONObject(raw) {
   return JSON.parse(cleaned.slice(s, e + 1));
 }
 
-async function callClaude(prompt, maxTokens = 1000) {
+// `web: true` asks the server to let the model search the web (costs extra —
+// only the question-answering paths request it, never the tagging/recap ones).
+async function callClaudeRaw(prompt, maxTokens = 1000, web = false) {
   const token = window.__session && window.__session.access_token;
   const response = await fetch("/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-    body: JSON.stringify({ prompt, max_tokens: maxTokens }),
+    body: JSON.stringify({ prompt, max_tokens: maxTokens, web }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || ("API request failed: " + response.status));
-  return String(data.text || "").trim();
+  return { text: String(data.text || "").trim(), sources: Array.isArray(data.sources) ? data.sources : [] };
+}
+async function callClaude(prompt, maxTokens = 1000) {
+  return (await callClaudeRaw(prompt, maxTokens)).text;
 }
 
 async function classifyEntry(text, vibeText, existingTopics = []) {
@@ -345,11 +353,12 @@ Entry:
   return { segments, tagline: String(parsed.tagline || "").trim() };
 }
 
-async function answerQuestion(question) {
-  const raw = await callClaude(`You are the AI inside someone's personal journal. Answer their question below helpfully and warmly in a few sentences (under 120 words). Then, on the LAST line only, output a JSON object like {"topic": "1-3 word topic label", "emotion": "one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral"} describing the question. Do not use markdown.
+async function answerQuestion(question, identity = "", web = false) {
+  const res = await callClaudeRaw(`You are the AI inside someone's personal journal. ${identity} Answer their question below helpfully and warmly in a few sentences (under 120 words).${web ? " If answering well needs current information (news, prices, recent events, anything after your training), search the web first and answer from what you find." : ""} Then, on the LAST line only, output a JSON object like {"topic": "1-3 word topic label", "emotion": "one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral"} describing the question. Do not use markdown.
 
 Question:
-"""${question}"""`);
+"""${question}"""`, 1000, web);
+  const raw = res.text;
   const lines = raw.split("\n").filter((l) => l.trim());
   let meta = { topic: "AI Answers", emotion: "neutral" };
   let answer = raw;
@@ -360,7 +369,12 @@ Question:
       answer = lines.slice(0, -1).join("\n").trim();
     }
   } catch (e) { /* keep defaults */ }
-  return { answer, topic: String(meta.topic || "AI Answers"), emotion: String(meta.emotion || "neutral").toLowerCase() };
+  return {
+    answer,
+    topic: String(meta.topic || "AI Answers"),
+    emotion: String(meta.emotion || "neutral").toLowerCase(),
+    sources: res.sources,
+  };
 }
 
 // ---------- long-entry handling ----------
@@ -576,6 +590,13 @@ const LG_CSS = `
   .lg-alt button { background: none; border: none; color: #3ce6a4; cursor: pointer;
     font: 600 13.5px 'Inter', sans-serif; padding: 0 4px; }
   .lg-msg { margin-top: 12px; color: #ff6b81; font-size: 13.5px; text-align: center; }
+  .lg-or { display: flex; align-items: center; gap: 10px; margin: 16px 0 12px; color: #6b7280; font-size: 12px; }
+  .lg-or::before, .lg-or::after { content: ""; flex: 1; height: 1px; background: #20242c; }
+  .lg-google { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: #ffffff; border: 1px solid #dadce0; color: #1f1f1f;
+    font: 600 13.5px 'Inter', sans-serif; padding: 11px; border-radius: 99px; cursor: pointer;
+    transition: box-shadow .2s; }
+  .lg-google:hover { box-shadow: 0 2px 10px rgba(0,0,0,.28); }
 `;
 
 // ---------- privacy lock screen ----------
@@ -679,6 +700,21 @@ function YearPixels({ domEmotions }) {
   );
 }
 
+// ---------- web-search citations ----------
+function Sources({ list }) {
+  if (!Array.isArray(list) || !list.length) return null;
+  return (
+    <div className="xo-sources">
+      <b>Sources</b>
+      {list.slice(0, 6).map((s, i) => (
+        <a key={s.url || i} href={s.url} target="_blank" rel="noopener noreferrer" title={s.url}>
+          {i + 1}. {s.title || s.url}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 // ---------- per-theme brand icon (replaces the blinking dot; tints to the accent) ----------
 function ThemeIcon({ theme }) {
   const p = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinejoin: "round", strokeLinecap: "round" };
@@ -719,6 +755,39 @@ function XOJournal() {
   const [dayCollapsed, setDayCollapsed] = useState({});
   const [rewind, setRewind] = useState(null);
   const [lightbox, setLightbox] = useState(null);
+  const [sched, setSched] = useState([]);
+  const [schedTitle, setSchedTitle] = useState("");
+  const [schedDate, setSchedDate] = useState(dayKey());
+  const [schedTime, setSchedTime] = useState("");
+  const [schedNote, setSchedNote] = useState("");
+  const [editLayout, setEditLayout] = useState(false);
+  const [dragId, setDragId] = useState(null);
+  const [notepad, setNotepad] = useState("");
+  const [padSaved, setPadSaved] = useState(true);
+  const [showAllTags, setShowAllTags] = useState(false);
+  const [tagEdit, setTagEdit] = useState(null);
+  const [tagEditVal, setTagEditVal] = useState("");
+  const [tagOpen, setTagOpen] = useState(false);
+  const [tagQuery, setTagQuery] = useState("");
+  const padTimer = useRef(null);
+  const tagDropRef = useRef(null);
+  // close the tag dropdown on any outside click
+  useEffect(() => {
+    if (!tagOpen) return;
+    const fn = (e) => { if (tagDropRef.current && !tagDropRef.current.contains(e.target)) setTagOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, [tagOpen]);
+  // Layout customisation is desktop-only. Gated on a real pointer too: HTML5 drag-and-drop
+  // doesn't fire from touch, so phones/iPads would get a control that can't work.
+  const LAYOUT_MQ = "(min-width: 1024px) and (pointer: fine)";
+  const [isWide, setIsWide] = useState(() => window.matchMedia(LAYOUT_MQ).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(LAYOUT_MQ);
+    const fn = (e) => setIsWide(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", fn); else mq.addListener(fn);
+    return () => { if (mq.removeEventListener) mq.removeEventListener("change", fn); else mq.removeListener(fn); };
+  }, []);
   const [askMsgs, setAskMsgs] = useState([]);
   const [askInput, setAskInput] = useState("");
   const [askBusy, setAskBusy] = useState(false);
@@ -748,14 +817,18 @@ function XOJournal() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [d, s, t, g] = await Promise.all([
+      const [d, s, t, g, sc, np] = await Promise.all([
         loadJSON(STORAGE_KEY, {}),
         loadJSON(SETTINGS_KEY, DEFAULT_SETTINGS),
         loadJSON(TRASH_KEY, []),
         loadJSON(GOALS_KEY, []),
+        loadJSON(SCHED_KEY, []),
+        loadJSON(NOTEPAD_KEY, ""),
       ]);
       if (!alive) return;
       setGoals(g);
+      setSched(Array.isArray(sc) ? sc : []);
+      setNotepad(typeof np === "string" ? np : "");
       const merged = { ...DEFAULT_SETTINGS, ...s };
       const norm = normalizeDays(d);
       if (norm.changed) saveJSON(STORAGE_KEY, norm.days);
@@ -783,6 +856,17 @@ function XOJournal() {
   const bgTheme = BACKGROUNDS[settings.bg] || BACKGROUNDS.black;
   const pack = theme.pack || "clean";
   const neon = pack === "neon";
+
+  // ----- the AI's name (declared early: render-time helpers below depend on it) -----
+  const aiName = String(settings.aiName || "").trim();
+  const aiLabel = aiName || "AI";
+  // "@ai …" always works; if you've named it, "<name>, …" works too
+  const askRe = new RegExp("^(@ai\\b|hey ai\\b|ai[,:]" + (aiName ? "|@?" + escapeRe(aiName) + "\\b[,:]?" : "") + ")\\s*", "i");
+  const aiIdentity = aiName
+    ? `Your name is ${aiName}. They may address you as ${aiName} — answer to it naturally, and never mention being an AI model or assistant.`
+    : "";
+  // Web search is off unless you turn it on — it bills per search on top of tokens.
+  const webSearch = settings.webSearch === true;
 
   const updateSettings = (patch) => {
     setSettings((prev) => {
@@ -1009,14 +1093,14 @@ Their week:
   const askAI = async () => {
     let text = draft.trim();
     if (!text || busy) return;
-    text = text.replace(/^(@ai|hey ai|ai[,:])\s*/i, "");
+    text = text.replace(askRe, "");
     setBusy(true); setBusyMode("ask"); setError("");
     try {
-      const { answer, topic, emotion } = await withRetry(() => answerQuestion(text));
+      const { answer, topic, emotion, sources } = await withRetry(() => answerQuestion(text, aiIdentity, webSearch));
       const time = nowTime();
       pushEntry(dayKey(), {
         id: uid(), time,
-        segments: [{ id: uid(), type: "qa", q: text, a: answer, topic, emotion, time }],
+        segments: [{ id: uid(), type: "qa", q: text, a: answer, topic, emotion, time, sources }],
       });
       setDraft("");
       textareaRef.current && textareaRef.current.focus();
@@ -1028,7 +1112,7 @@ Their week:
     }
   };
 
-  const looksLikeQuestion = /^(@ai|hey ai|ai[,:])/i.test(draft.trim());
+  const looksLikeQuestion = askRe.test(draft.trim());
   const submit = () => (looksLikeQuestion ? askAI() : addEntry());
 
   // ----- talk to your journal (Ask tab) -----
@@ -1048,7 +1132,7 @@ Their week:
       const relevant = hits.slice(-30).join("\n").slice(0, 4000);
       const digest = buildDigest(days, 30);
       const history = askMsgs.slice(-6).map((m) => (m.role === "u" ? "Them: " : "You: ") + m.text).join("\n");
-      const raw = await withRetry(() => callClaude(`You are the AI living inside someone's private journal. They're asking you about their own life, and you have their entries below. Answer from their entries — quote or reference specific dates and things they actually wrote. If the entries don't contain the answer, say so honestly instead of guessing. Under 150 words, warm and direct, no markdown.
+      const res = await withRetry(() => callClaudeRaw(`You are the AI living inside someone's private journal. ${aiIdentity} They're asking you about their own life, and you have their entries below.${webSearch ? " If the question needs current outside information (news, prices, recent events), you may search the web and blend it with what they wrote — say which part came from the web." : ""} Answer from their entries — quote or reference specific dates and things they actually wrote. If the entries don't contain the answer, say so honestly instead of guessing. Under 150 words, warm and direct, no markdown.
 
 Conversation so far:
 ${history || "(first question)"}
@@ -1059,8 +1143,8 @@ Notes matching their question:
 Their recent entries:
 """${digest || "no entries yet"}"""
 
-Their question: "${question}"`, 700));
-      setAskMsgs((m) => [...m, { role: "a", text: raw.trim() }]);
+Their question: "${question}"`, 700, webSearch));
+      setAskMsgs((m) => [...m, { role: "a", text: res.text, sources: res.sources }]);
     } catch (e) {
       setAskMsgs((m) => [...m, { role: "a", text: "I couldn't reach the AI just now — try again in a moment." }]);
     } finally {
@@ -1192,6 +1276,107 @@ Their question: "${question}"`, 700));
       return [];
     });
   };
+
+  // ----- notepad (plain scratch space — no AI, no sorting, no mood) -----
+  const onNotepad = (val) => {
+    setNotepad(val);
+    setPadSaved(false);
+    if (padTimer.current) clearTimeout(padTimer.current);
+    padTimer.current = setTimeout(() => {
+      saveJSON(NOTEPAD_KEY, val).then(() => setPadSaved(true)).catch(() => setPadSaved(true));
+    }, 600);
+  };
+  useEffect(() => () => { if (padTimer.current) clearTimeout(padTimer.current); }, []);
+
+  // ----- tags: favourites + housekeeping (rename / merge / delete) -----
+  const favTags = Array.isArray(settings.favTags) ? settings.favTags : [];
+  const toggleFavTag = (t) =>
+    updateSettings({ favTags: favTags.includes(t) ? favTags.filter((x) => x !== t) : [...favTags, t] });
+  const rewriteTags = (fn) => {
+    setDays((prev) => {
+      const next = {};
+      for (const k of Object.keys(prev)) {
+        next[k] = {
+          ...prev[k],
+          entries: (prev[k].entries || []).map((en) => ({
+            ...en,
+            segments: (en.segments || []).map((sg) => {
+              let out = fn(segTags(sg));
+              out = [...new Set(out.map((x) => String(x).trim()).filter(Boolean))];
+              if (!out.length) out = ["Unsorted"];
+              return { ...sg, tags: out, topic: out[0] };
+            }),
+          })),
+        };
+      }
+      saveJSON(STORAGE_KEY, next);
+      return next;
+    });
+  };
+  // renaming onto an existing tag merges the two
+  const renameTag = (from, to) => {
+    const t = String(to || "").trim();
+    if (!t || t.toLowerCase() === from.toLowerCase()) return;
+    rewriteTags((tags) => tags.map((x) => (x.toLowerCase() === from.toLowerCase() ? t : x)));
+    if (favTags.includes(from)) updateSettings({ favTags: [...favTags.filter((x) => x !== from), t] });
+    if (topicFilter.toLowerCase() === from.toLowerCase()) setTopicFilter(t);
+  };
+  const deleteTag = (name) => {
+    rewriteTags((tags) => tags.filter((x) => x.toLowerCase() !== name.toLowerCase()));
+    if (favTags.includes(name)) updateSettings({ favTags: favTags.filter((x) => x !== name) });
+    if (topicFilter.toLowerCase() === name.toLowerCase()) setTopicFilter("");
+  };
+
+  // ----- schedule -----
+  const saveSched = (updater) => {
+    setSched((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveJSON(SCHED_KEY, next);
+      return next;
+    });
+  };
+  const addSched = () => {
+    const title = schedTitle.trim();
+    if (!title || !schedDate) return;
+    saveSched((prev) => [...prev, {
+      id: uid(), title, date: schedDate, time: schedTime || "",
+      note: schedNote.trim(), done: false, createdAt: Date.now(),
+    }]);
+    setSchedTitle(""); setSchedTime(""); setSchedNote("");
+  };
+  const toggleSched = (id) => saveSched((prev) => prev.map((s) => (s.id === id ? { ...s, done: !s.done } : s)));
+  const deleteSched = (id) => saveSched((prev) => prev.filter((s) => s.id !== id));
+
+  // ----- desktop layout customisation (drag / collapse / hide sidebar panels) -----
+  const layoutCfg = (settings.layout && typeof settings.layout === "object") ? settings.layout : {};
+  const savedOrder = Array.isArray(layoutCfg.order) ? layoutCfg.order : [];
+  const hiddenPanels = isWide && Array.isArray(layoutCfg.hidden) ? layoutCfg.hidden : [];
+  const collapsedPanels = isWide && Array.isArray(layoutCfg.collapsed) ? layoutCfg.collapsed : [];
+  const setLayout = (patch) => updateSettings({ layout: { order: savedOrder, hidden: hiddenPanels, collapsed: collapsedPanels, ...patch } });
+  const orderPanels = (panels) => {
+    if (!isWide || !savedOrder.length) return panels;
+    const byId = {};
+    panels.forEach((p) => { byId[p.id] = p; });
+    const seen = new Set();
+    const out = [];
+    for (const id of savedOrder) { if (byId[id] && !seen.has(id)) { out.push(byId[id]); seen.add(id); } }
+    for (const p of panels) { if (!seen.has(p.id)) out.push(p); } // newly added panels land at the end
+    return out;
+  };
+  const movePanel = (fromId, toId, panels) => {
+    if (!fromId || !toId || fromId === toId) return;
+    const ids = orderPanels(panels).map((p) => p.id);
+    const from = ids.indexOf(fromId);
+    const to = ids.indexOf(toId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    setLayout({ order: ids });
+  };
+  const togglePanelCollapsed = (id) =>
+    setLayout({ collapsed: collapsedPanels.includes(id) ? collapsedPanels.filter((x) => x !== id) : [...collapsedPanels, id] });
+  const togglePanelHidden = (id) =>
+    setLayout({ hidden: hiddenPanels.includes(id) ? hiddenPanels.filter((x) => x !== id) : [...hiddenPanels, id] });
+  const resetLayout = () => updateSettings({ layout: { order: [], hidden: [], collapsed: [] } });
 
   // ----- goals / self-improvement -----
   const saveGoals = (updater) => {
@@ -1417,7 +1602,19 @@ Digest:
   eachSegment(days, (k, en, sg) => {
     for (const t of segTags(sg)) allTopics[t] = (allTopics[t] || 0) + 1;
   });
-  const topTopics = Object.entries(allTopics).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([t]) => t);
+  // favourites pinned to the front, then most-used; the rest stay behind a "＋N more" so the row never sprawls
+  const TAG_CHIP_CAP = 12;
+  const tagsByCount = Object.entries(allTopics).sort((a, b) => b[1] - a[1]).map(([t]) => t);
+  const favFirstTags = [...tagsByCount.filter((t) => favTags.includes(t)), ...tagsByCount.filter((t) => !favTags.includes(t))];
+  const topTopics = showAllTags ? favFirstTags : favFirstTags.slice(0, TAG_CHIP_CAP);
+  const moreTagCount = Math.max(0, favFirstTags.length - TAG_CHIP_CAP);
+  const allTagRows = Object.entries(allTopics).sort((a, b) => b[1] - a[1]);
+  // dropdown list: favourites pinned to the top, then most-used, filtered by the menu's search box
+  const menuTags = (() => {
+    const q2 = tagQuery.trim().toLowerCase();
+    const rows = allTagRows.filter(([t]) => !q2 || t.toLowerCase().includes(q2));
+    return [...rows.filter(([t]) => favTags.includes(t)), ...rows.filter(([t]) => !favTags.includes(t))];
+  })();
 
   const q = query.trim().toLowerCase();
   const segMatches = (seg) => {
@@ -1495,6 +1692,126 @@ Digest:
   const recentPhotos = allPhotos.slice(0, 6).map((p) => p.imgKey);
   let anyFav = false;
   eachSegment(days, (k2, en, sg) => { if (sg.fav) anyFav = true; });
+
+  // ----- schedule grouping -----
+  const todayKey = dayKey();
+  const tomorrowKey = dayKey(new Date(Date.now() + 86400000));
+  const schedSorted = [...sched].sort((a, b) => (a.date + (a.time || "99:99")).localeCompare(b.date + (b.time || "99:99")));
+  const schedOpen = schedSorted.filter((s) => !s.done);
+  const schedOpenCount = schedOpen.filter((s) => s.date <= todayKey).length;
+  const schedGroups = [
+    { key: "overdue", label: "Overdue", items: schedOpen.filter((s) => s.date < todayKey) },
+    { key: "today", label: "Today", items: schedOpen.filter((s) => s.date === todayKey) },
+    { key: "tomorrow", label: "Tomorrow", items: schedOpen.filter((s) => s.date === tomorrowKey) },
+    { key: "upcoming", label: "Upcoming", items: schedOpen.filter((s) => s.date > tomorrowKey) },
+    { key: "done", label: "Done", items: schedSorted.filter((s) => s.done) },
+  ].filter((g) => g.items.length > 0);
+
+  // Sidebar panels as data, so they can be reordered / collapsed / hidden on desktop.
+  const sidePanels = [
+    {
+      id: "mood", title: "Mood — last 5 weeks", show: true,
+      body: (
+        <>
+          <div className="xo-minical">
+            {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => <div className="mh" key={h}>{h}</div>)}
+            {Array.from({ length: calPadStart }).map((_, i) => <div className="xo-mc dim" key={"pad" + i} />)}
+            {calCells.map((c) => {
+              const e = c.emotion ? emotionOf(c.emotion) : null;
+              return (
+                <div
+                  key={c.key}
+                  className="xo-mc"
+                  title={prettyDate(c.key, true) + (c.emotion ? " — " + emotionOf(c.emotion).label : "")}
+                  style={e ? { background: e.bg, borderColor: e.dot } : undefined}
+                />
+              );
+            })}
+          </div>
+          <p className="xo-note" style={{ marginTop: 10, marginBottom: 0 }}>Each square is a day, colored by its dominant mood.</p>
+        </>
+      ),
+    },
+    {
+      id: "week", title: "This week", show: hasEntries,
+      body: (
+        <>
+          <div className="xo-weekbars">
+            {last7.map((d) => (
+              <div className="wb" key={d.key} title={prettyDate(d.key, true) + " — " + d.n + " note" + (d.n === 1 ? "" : "s")}>
+                <div className="wbtrack"><div className="wbfill" style={{ height: Math.round(d.n / week7max * 100) + "%", opacity: d.n ? 1 : 0 }} /></div>
+                <span>{d.lbl}</span>
+              </div>
+            ))}
+          </div>
+          <p className="xo-note" style={{ marginTop: 10, marginBottom: 0 }}>{notes7} note{notes7 === 1 ? "" : "s"} in the last 7 days</p>
+        </>
+      ),
+    },
+    {
+      id: "moodmix", title: "Mood mix", show: moodMix.length > 0,
+      body: moodMix.map(([m, n]) => {
+        const e = emotionOf(m);
+        return (
+          <div className="xo-statrow" key={m}>
+            <span className="name" style={{ color: e.text }}>{e.label}</span>
+            <span className="bar"><span className="fill" style={{ width: Math.round(n / moodMixMax * 100) + "%", background: e.dot }} /></span>
+            <span className="n">{n}</span>
+          </div>
+        );
+      }),
+    },
+    {
+      id: "rewind", title: "Rewind" + (rewind && rewind.seg.fav ? " ★" : ""), show: !!rewind,
+      body: rewind ? (
+        <>
+          <p className="xo-note" style={{ marginBottom: 8 }}>
+            {prettyDate(rewind.day)}{segTags(rewind.seg).length ? " · " + segTags(rewind.seg).join(" · ") : ""}
+          </p>
+          <div className="xo-rewindtext">
+            {itemPlainText(rewind.seg).slice(0, 280)}{itemPlainText(rewind.seg).length > 280 ? "…" : ""}
+          </div>
+          <div className="xo-panel-row" style={{ marginTop: 10 }}>
+            <button className="xo-panel-btn" onClick={() => setRewind(pickRewind(days))}>Show another</button>
+          </div>
+        </>
+      ) : null,
+    },
+    {
+      id: "photos", title: "Recent photos", show: recentPhotos.length > 0,
+      body: <div className="xo-photostrip">{recentPhotos.map((pk) => <StoredImage key={pk} imgKey={pk} />)}</div>,
+    },
+    {
+      id: "topics", title: "Top topics", show: topicRows.length > 0,
+      body: topicRows.map(([t, n]) => (
+        <div
+          className="xo-statrow click"
+          key={t}
+          title="Filter by this tag"
+          onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
+        >
+          <span className="name">{t}</span>
+          <span className="bar"><span className="fill" style={{ width: Math.round(n / topicMax * 100) + "%", background: "var(--accent)" }} /></span>
+          <span className="n">{n}</span>
+        </div>
+      )),
+    },
+    {
+      id: "otd", title: "On this day", show: otd.length > 0,
+      body: otd.map((o) => {
+        const ens = days[o.key].entries || [];
+        const allSegs = ens.flatMap((en) => en.segments || []);
+        const topics = [...new Set(allSegs.flatMap(segTags))].slice(0, 2).join(", ");
+        const first = allSegs.find((s) => !s.type || s.type === "text");
+        return (
+          <p className="xo-note" key={o.key} style={{ margin: "0 0 8px" }}>
+            <b style={{ color: "var(--body)" }}>{o.label}</b> you wrote about <em style={{ color: "var(--accent)", fontStyle: "normal" }}>{topics || "your day"}</em>
+            {first ? <> — "{String(first.text).slice(0, 90)}{first.text.length > 90 ? "…" : ""}"</> : null}
+          </p>
+        );
+      }),
+    },
+  ];
 
   const showPromptCard =
     loaded && view === "journal" && (welcome || welcomeBusy);
@@ -1973,6 +2290,43 @@ Digest:
           .xo-side .xo-panel h3 { font-size: 14px; margin-bottom: 12px; }
         }
 
+        /* ================= TABLET / iPad (701–1024px) ================= */
+        @media (min-width: 701px) and (max-width: 1024px) {
+          .xo-root { padding: calc(20px + env(safe-area-inset-top, 0px))
+                              calc(22px + env(safe-area-inset-right, 0px))
+                              calc(70px + env(safe-area-inset-bottom, 0px))
+                              calc(22px + env(safe-area-inset-left, 0px)); }
+          /* 4 KPI cards across is cramped at this width — 2×2 reads better */
+          .xo-kpis { grid-template-columns: 1fr 1fr; gap: 12px; }
+          .xo-kpi.hero { grid-column: span 1; }
+          .xo-kpi .val { font-size: 26px; }
+          .xo-kpi.hero .val { font-size: 30px; }
+          .xo-tab { padding: 9px 16px; font-size: 13.5px; }
+          .xo-composer textarea { min-height: 104px; }
+          .xo-tagmenu { width: 300px; }
+          .xo-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+        }
+
+        /* ================= TOUCH DEVICES (any size) ================= */
+        @media (pointer: coarse) {
+          /* hover styles stick after a tap on touch — neutralise the lift/translate ones */
+          .xo-kpi:hover, .xo-panel:hover, .xo-daycard:hover, .xo-goal:hover, .xo-wallpost:hover,
+          .xo-gear:hover, .xo-panel-btn:hover, .xo-preset:hover, .xo-add:hover, .xo-attach:hover,
+          .xo-mic:hover, .xo-ask:hover, .xo-sched:hover, img.xo-galtile:hover, .xo-promptcard:hover,
+          .xo-insight:hover, .xo-statrow.click:hover .name { transform: none; }
+          .xo-shuffle:hover:not(:disabled) { transform: none; }
+          /* comfortable tap targets */
+          .xo-act { padding: 6px; font-size: 16px; }
+          .xo-segacts { opacity: 1; gap: 2px; }
+          .xo-tagopt { padding: 11px 9px; }
+          .xo-tagopt .star { font-size: 15px; padding: 0 2px; }
+          .xo-topicchip, .xo-tag { padding-top: 6px; padding-bottom: 6px; }
+          .xo-schedcheck { width: 26px; height: 26px; }
+          /* 16px inputs stop iOS/iPadOS zooming on focus */
+          .xo-composer textarea, .xo-search, .xo-panel input[type="text"],
+          .xo-editbox textarea, .xo-pad, .xo-goalnew input { font-size: 16px; }
+        }
+
         /* wide screens: give the reading column and the dashboard rail more room */
         @media (min-width: 1001px) {
           .xo-shell { max-width: 1280px; }
@@ -2033,6 +2387,101 @@ Digest:
         .xo-shuffle:hover:not(:disabled) { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); transform: rotate(180deg); }
         .xo-shuffle:disabled { opacity: 0.4; cursor: default; }
         .xo-act.star.on { color: var(--accent); }
+
+        /* ---------- schedule ---------- */
+        .xo-schednew { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .xo-schednew > .xo-search { flex: 1; min-width: 220px; }
+        .xo-schedwhen { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .xo-schedwhen .xo-search { flex: none; width: auto; min-width: 130px; }
+        .xo-sched { display: flex; align-items: flex-start; gap: 12px; background: var(--card); border: 1px solid var(--line);
+          border-left: 3px solid rgba(var(--accent-rgb), 0.55); border-radius: 14px; padding: 13px 15px; margin-bottom: 10px;
+          transition: border-color .2s, opacity .2s; }
+        .xo-sched:hover { border-color: var(--dash); border-left-color: rgba(var(--accent-rgb), 0.55); }
+        .xo-sched.late { border-left-color: #ff6b81; }
+        .xo-sched.done { opacity: 0.5; border-left-color: var(--line); }
+        .xo-sched.done .xo-schedtitle { text-decoration: line-through; }
+        .xo-schedcheck { flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 7px; cursor: pointer;
+          border: 1px solid var(--dash); background: var(--inputbg); color: var(--btn-text); font-size: 13px; line-height: 1;
+          display: flex; align-items: center; justify-content: center; transition: all .2s; }
+        .xo-schedcheck:hover { border-color: var(--accent); }
+        .xo-sched.done .xo-schedcheck { background: var(--accent); border-color: var(--accent); }
+        .xo-schedbody { flex: 1; min-width: 0; }
+        .xo-schedtitle { font-size: 14.5px; color: var(--ink); font-weight: 500; word-break: break-word; }
+        .xo-schedmeta { font-size: 11.5px; color: var(--faint); margin-top: 3px; letter-spacing: 0.02em; }
+        .xo-sched.late .xo-schedmeta { color: #ff8b96; }
+        .xo-schednote { font-size: 13px; color: var(--body); margin-top: 6px; line-height: 1.55; word-break: break-word; }
+
+        /* ---------- web-search sources ---------- */
+        .xo-sources { display: flex; flex-direction: column; gap: 3px; margin-top: 10px;
+          padding-top: 8px; border-top: 1px dashed var(--dash); }
+        .xo-sources b { font: 600 9.5px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase;
+          color: var(--faint); margin-bottom: 2px; }
+        .xo-sources a { color: var(--accent); text-decoration: none; font-size: 12px; line-height: 1.5;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
+        .xo-sources a:hover { opacity: 1; text-decoration: underline; }
+
+        /* ---------- filter bar + tag dropdown ---------- */
+        .xo-filterbar { display: flex; gap: 10px; margin: 0 0 12px; align-items: stretch; flex-wrap: wrap; }
+        .xo-filterbar > .xo-search { flex: 1; min-width: 180px; }
+        .xo-tagdrop { position: relative; flex: none; }
+        .xo-tagdropbtn { display: inline-flex; align-items: center; gap: 8px; height: 100%; min-height: 38px;
+          background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--body);
+          font: 500 13.5px var(--bodyfont); padding: 8px 14px; cursor: pointer; transition: border-color .2s;
+          max-width: 230px; }
+        .xo-tagdropbtn .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-tagdropbtn .chev { color: var(--faint); font-size: 11px; transition: transform .2s; flex: none; }
+        .xo-tagdrop.open .xo-tagdropbtn { border-color: rgba(var(--accent-rgb), 0.55); color: var(--accent); }
+        .xo-tagdrop.open .chev { transform: rotate(180deg); }
+        .xo-tagmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 280px;
+          background: var(--card); border: 1px solid var(--dash); border-radius: 14px; padding: 8px;
+          box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5); animation: xorise .16s ease both; }
+        .xo-tagmenu > .xo-search { width: 100%; box-sizing: border-box; margin-bottom: 6px; }
+        .xo-tagmenulist { max-height: 300px; overflow-y: auto; scrollbar-width: thin; }
+        .xo-tagopt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+          background: none; border: none; border-radius: 9px; padding: 8px 9px; cursor: pointer;
+          color: var(--body); font: 500 13px var(--bodyfont); transition: background .15s; }
+        .xo-tagopt:hover { background: rgba(var(--strong-rgb), 0.06); }
+        .xo-tagopt.on { color: var(--accent); background: var(--soft); }
+        .xo-tagopt.clear { color: var(--faint); }
+        .xo-tagopt .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-tagopt .ct { color: var(--faint); font-size: 11.5px; flex: none; }
+        .xo-tagopt .star { flex: none; color: var(--faint); font-size: 13px; line-height: 1; }
+        .xo-tagopt .star.on { color: var(--accent); }
+        .xo-tagopt .star:hover { color: var(--accent); }
+        .xo-tagnone { padding: 12px 9px; color: var(--faint); font-size: 12.5px; }
+
+        /* ---------- notepad ---------- */
+        .xo-padwrap { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px; }
+        .xo-padhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+        .xo-padstate { font: 500 11px var(--bodyfont); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); flex: none; }
+        .xo-padstate.saved { color: var(--accent); }
+        .xo-pad { width: 100%; box-sizing: border-box; min-height: 58vh; resize: vertical; background: transparent;
+          border: none; outline: none; color: var(--ink); caret-color: var(--accent);
+          font: 15px/1.75 var(--bodyfont); }
+        .xo-pad::placeholder { color: var(--placeholder); }
+
+        /* ---------- tag manager ---------- */
+        .xo-tagmgr { max-height: 260px; overflow-y: auto; scrollbar-width: thin; border: 1px solid var(--line);
+          border-radius: 12px; padding: 6px; background: var(--inputbg); }
+        .xo-tagrow { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; }
+        .xo-tagrow:hover { background: rgba(var(--strong-rgb), 0.04); }
+        .xo-tagrow .xo-search { flex: 1; padding: 5px 9px; font-size: 13px; }
+        .xo-tagname { flex: 1; font-size: 13px; color: var(--body); cursor: text; min-width: 0;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-tagname:hover { color: var(--accent); }
+        .xo-tagcount { font-size: 11px; color: var(--faint); flex: none; min-width: 20px; text-align: right; }
+
+        /* ---------- desktop layout editor ---------- */
+        .xo-layoutbar { display: flex; gap: 8px; margin-bottom: 12px; }
+        .xo-panel-btn.on { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.55); background: var(--soft); }
+        .xo-ptitle { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+        .xo-pacts { display: inline-flex; gap: 2px; flex: none; }
+        .xo-grip { color: var(--faint); font-size: 13px; cursor: grab; letter-spacing: -1px; }
+        .xo-panel.arranging { border-style: dashed; border-color: rgba(var(--accent-rgb), 0.45); cursor: grab; }
+        .xo-panel.arranging:active { cursor: grabbing; }
+        .xo-panel.dragging { opacity: 0.45; }
+        .xo-panel.ghosted { opacity: 0.4; }
+        .xo-panel.ghosted .xo-ptitle { text-decoration: line-through; }
 
         /* ---------- album preset chips ---------- */
         .xo-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
@@ -2200,11 +2649,15 @@ Digest:
           </div>
           <div className="xo-tabs">
             <button className={view === "journal" ? "xo-tab on" : "xo-tab"} onClick={() => setView("journal")}>Journal</button>
+            <button className={view === "schedule" ? "xo-tab on" : "xo-tab"} onClick={() => setView("schedule")}>
+              Schedule{schedOpenCount > 0 ? ` (${schedOpenCount})` : ""}
+            </button>
             <button className={view === "goals" ? "xo-tab on" : "xo-tab"} onClick={() => setView("goals")}>Growth</button>
             <button className={view === "photos" ? "xo-tab on" : "xo-tab"} onClick={() => setView("photos")}>
               Photos{allPhotos.length > 0 ? ` (${allPhotos.length})` : ""}
             </button>
-            <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => setView("ask")}>Ask</button>
+            <button className={view === "notepad" ? "xo-tab on" : "xo-tab"} onClick={() => setView("notepad")}>Notepad</button>
+            <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => setView("ask")}>{aiName || "Ask"}</button>
             <button className={view === "insights" ? "xo-tab on" : "xo-tab"} onClick={() => setView("insights")}>Insights</button>
             <button className={view === "trash" ? "xo-tab on" : "xo-tab"} onClick={() => setView("trash")}>
               Deleted{trash.length > 0 ? ` (${trash.length})` : ""}
@@ -2240,6 +2693,81 @@ Digest:
               onChange={(e) => updateSettings({ customTagline: e.target.value })}
               placeholder="Your own line under the title"
             />
+            <label htmlFor="xo-ainame" style={{ marginTop: 14 }}>Name your AI (it'll answer to this, and sign its replies with it)</label>
+            <input
+              id="xo-ainame"
+              type="text"
+              value={settings.aiName || ""}
+              onChange={(e) => updateSettings({ aiName: e.target.value })}
+              placeholder="e.g. Kuro, Sage, Ghost — leave blank for just “AI”"
+            />
+
+            <label style={{ marginTop: 14 }}>Web search</label>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+              {[[false, "Off"], [true, "Let " + (aiName || "the AI") + " search the web"]].map(([val, lbl]) => (
+                <button
+                  key={String(val)}
+                  className={webSearch === val ? "xo-topicchip on" : "xo-topicchip"}
+                  onClick={() => updateSettings({ webSearch: val })}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+            <p className="xo-note" style={{ marginTop: 8 }}>
+              Only used when you ask a question (@ai or the {aiName || "Ask"} tab) that needs current info — never for
+              sorting entries or recaps. Costs about a cent per search on top of normal usage, and answers come with
+              their sources. Your deployment must also have <code>WEB_SEARCH=on</code> set.
+            </p>
+
+            {allTagRows.length > 0 && (
+              <>
+                <label style={{ marginTop: 14 }}>Tags — {allTagRows.length} in use ({favTags.length} favourite{favTags.length === 1 ? "" : "s"})</label>
+                <p className="xo-note" style={{ margin: "0 0 8px" }}>
+                  Star a tag to pin it to the front of your filters. Rename a tag onto an existing one to merge them — that's how you keep things tidy.
+                </p>
+                <div className="xo-tagmgr">
+                  {allTagRows.map(([t, n]) => (
+                    <div className="xo-tagrow" key={t}>
+                      <button
+                        className={favTags.includes(t) ? "xo-act star on" : "xo-act star"}
+                        title={favTags.includes(t) ? "Unpin tag" : "Pin tag to the front"}
+                        aria-label={favTags.includes(t) ? "Unpin tag" : "Pin tag"}
+                        onClick={() => toggleFavTag(t)}
+                      >{favTags.includes(t) ? "★" : "☆"}</button>
+                      {tagEdit === t ? (
+                        <>
+                          <input
+                            type="text"
+                            className="xo-search"
+                            autoFocus
+                            value={tagEditVal}
+                            onChange={(e) => setTagEditVal(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { renameTag(t, tagEditVal); setTagEdit(null); }
+                              if (e.key === "Escape") setTagEdit(null);
+                            }}
+                          />
+                          <button className="xo-act" title="Save" onClick={() => { renameTag(t, tagEditVal); setTagEdit(null); }}>✓</button>
+                          <button className="xo-act" title="Cancel" onClick={() => setTagEdit(null)}>×</button>
+                        </>
+                      ) : (
+                        <>
+                          <span
+                            className="xo-tagname"
+                            title="Rename (or merge into an existing tag)"
+                            onClick={() => { setTagEdit(t); setTagEditVal(t); }}
+                          >{t}</span>
+                          <span className="xo-tagcount">{n}</span>
+                          <button className="xo-act del" title="Remove this tag from every entry" aria-label="Delete tag" onClick={() => deleteTag(t)}>×</button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             <label style={{ marginTop: 14 }}>Theme presets</label>
             <div className="xo-presets">
               {ALBUM_PRESETS.map((p) => {
@@ -2395,6 +2923,91 @@ Digest:
           </>
         )}
 
+        {view === "notepad" && (
+          <div className="xo-padwrap">
+            <div className="xo-padhead">
+              <span className="xo-note">Plain paper. Nothing here is sorted, tagged, read by the AI, or given a mood — it's just yours.</span>
+              <span className={padSaved ? "xo-padstate saved" : "xo-padstate"}>{padSaved ? "Saved" : "Saving…"}</span>
+            </div>
+            <textarea
+              className="xo-pad"
+              value={notepad}
+              onChange={(e) => onNotepad(e.target.value)}
+              placeholder="Write anything…"
+              spellCheck="true"
+            />
+          </div>
+        )}
+
+        {view === "schedule" && (
+          <>
+            <p className="xo-wallnote">
+              What's coming up. Your journal holds what already happened — this is the other half.
+            </p>
+
+            <div className="xo-composer" style={{ marginBottom: 18 }}>
+              <div className="xo-schednew">
+                <input
+                  type="text"
+                  className="xo-search"
+                  value={schedTitle}
+                  onChange={(e) => setSchedTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addSched(); }}
+                  placeholder="What's happening? e.g. Dinner with mom, Dentist, Ship the update…"
+                />
+                <div className="xo-schedwhen">
+                  <input type="date" className="xo-search" value={schedDate} onChange={(e) => setSchedDate(e.target.value)} />
+                  <input type="time" className="xo-search" value={schedTime} onChange={(e) => setSchedTime(e.target.value)} />
+                  <button className="xo-add" onClick={addSched} disabled={!schedTitle.trim() || !schedDate}>Add</button>
+                </div>
+              </div>
+              <input
+                type="text"
+                className="xo-search"
+                style={{ marginTop: 10 }}
+                value={schedNote}
+                onChange={(e) => setSchedNote(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addSched(); }}
+                placeholder="Note (optional)"
+              />
+            </div>
+
+            {sched.length === 0 && (
+              <div className="xo-empty">
+                <strong>Nothing scheduled.</strong>
+                Add anything you want to remember — plans, appointments, deadlines. Overdue and today's items show a count on the tab.
+              </div>
+            )}
+
+            {schedGroups.map((g) => (
+              <section key={g.key}>
+                <h3 className="xo-subhead">
+                  {g.label} <span className="xo-daycount">{g.items.length}</span>
+                </h3>
+                {g.items.map((s) => (
+                  <div className={s.done ? "xo-sched done" : (s.date < todayKey ? "xo-sched late" : "xo-sched")} key={s.id}>
+                    <button
+                      className="xo-schedcheck"
+                      title={s.done ? "Mark as not done" : "Mark done"}
+                      aria-label={s.done ? "Mark as not done" : "Mark done"}
+                      onClick={() => toggleSched(s.id)}
+                    >{s.done ? "✓" : ""}</button>
+                    <div className="xo-schedbody">
+                      <div className="xo-schedtitle">{s.title}</div>
+                      <div className="xo-schedmeta">
+                        {prettyDate(s.date, true)}{s.time ? " · " + s.time : ""}
+                        {s.date < todayKey && !s.done ? " · overdue" : ""}
+                      </div>
+                      {s.note && <div className="xo-schednote">{s.note}</div>}
+                    </div>
+                    <button className="xo-act del" title="Delete" aria-label="Delete" onClick={() => deleteSched(s.id)}>×</button>
+                  </div>
+                ))}
+              </section>
+            ))}
+          </>
+        )}
+
         {view === "photos" && (
           <>
             {allPhotos.length === 0 ? (
@@ -2417,9 +3030,9 @@ Digest:
 
         {view === "ask" && (
           <div className="xo-panel" style={{ maxWidth: 760 }}>
-            <h3>Talk to your journal</h3>
+            <h3>{aiName ? `Talk to ${aiName}` : "Talk to your journal"}</h3>
             <p className="xo-note" style={{ marginBottom: 12 }}>
-              Ask about anything you've written — moods, people, decisions, patterns. The AI answers from your own entries. Conversations aren't saved.
+              Ask about anything you've written — moods, people, decisions, patterns. {aiName || "The AI"} answers from your own entries. Conversations aren't saved.
             </p>
             <div className="xo-chat">
               {askMsgs.length === 0 && !askBusy && (
@@ -2429,12 +3042,13 @@ Digest:
               )}
               {askMsgs.map((m, i) => (
                 <div key={i} className={m.role === "u" ? "xo-msg u" : "xo-msg a"}>
-                  {m.role === "a" && <span className="xo-aibadge">AI</span>}
+                  {m.role === "a" && <span className="xo-aibadge">{aiLabel}</span>}
                   <Linkify text={m.text} />
+                  <Sources list={m.sources} />
                 </div>
               ))}
               {askBusy && (
-                <div className="xo-msg a"><span className="xo-aibadge">AI</span><span style={{ opacity: 0.6, fontStyle: "italic" }}>reading back through your entries…</span></div>
+                <div className="xo-msg a"><span className="xo-aibadge">{aiLabel}</span><span style={{ opacity: 0.6, fontStyle: "italic" }}>reading back through your entries…</span></div>
               )}
             </div>
             <div className="xo-chatrow">
@@ -2530,40 +3144,71 @@ Digest:
             </div>
 
             {hasEntries && (
-              <>
-                <div className="xo-searchrow">
-                  <input
-                    className="xo-search"
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search your journal…"
-                  />
+              <div className="xo-filterbar">
+                <input
+                  className="xo-search"
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search your journal…"
+                />
+                <div className={tagOpen ? "xo-tagdrop open" : "xo-tagdrop"} ref={tagDropRef}>
+                  <button className="xo-tagdropbtn" onClick={() => setTagOpen(!tagOpen)} title="Filter by tag">
+                    <span className="lbl">
+                      {favFilter ? "★ Favorites" : (topicFilter || "All tags")}
+                    </span>
+                    <span className="chev">▾</span>
+                  </button>
+                  {tagOpen && (
+                    <div className="xo-tagmenu">
+                      <input
+                        className="xo-search"
+                        type="text"
+                        autoFocus
+                        value={tagQuery}
+                        onChange={(e) => setTagQuery(e.target.value)}
+                        placeholder="Find a tag…"
+                      />
+                      <div className="xo-tagmenulist">
+                        {(topicFilter || favFilter) && (
+                          <button
+                            className="xo-tagopt clear"
+                            onClick={() => { setTopicFilter(""); setFavFilter(false); setTagOpen(false); }}
+                          >✕ Clear filter</button>
+                        )}
+                        {anyFav && (
+                          <button
+                            className={favFilter ? "xo-tagopt on" : "xo-tagopt"}
+                            onClick={() => { setFavFilter(!favFilter); setTopicFilter(""); setTagOpen(false); }}
+                          >
+                            <span className="nm">★ Favorites</span>
+                          </button>
+                        )}
+                        {menuTags.length === 0 && <div className="xo-tagnone">No tags match.</div>}
+                        {menuTags.map(([t, n]) => (
+                          <button
+                            key={t}
+                            className={topicFilter.toLowerCase() === t.toLowerCase() ? "xo-tagopt on" : "xo-tagopt"}
+                            onClick={() => {
+                              setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t);
+                              setFavFilter(false);
+                              setTagOpen(false);
+                            }}
+                          >
+                            <span
+                              className={favTags.includes(t) ? "star on" : "star"}
+                              title={favTags.includes(t) ? "Unpin" : "Pin to top"}
+                              onClick={(e) => { e.stopPropagation(); toggleFavTag(t); }}
+                            >{favTags.includes(t) ? "★" : "☆"}</span>
+                            <span className="nm">{t}</span>
+                            <span className="ct">{n}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {(topTopics.length > 1 || anyFav) && (
-                  <div className="xo-topicchips">
-                    {anyFav && (
-                      <button className={favFilter ? "xo-topicchip on" : "xo-topicchip"} onClick={() => setFavFilter(!favFilter)}>
-                        ★ Favorites
-                      </button>
-                    )}
-                    {topTopics.map((t) => (
-                      <button
-                        key={t}
-                        className={topicFilter.toLowerCase() === t.toLowerCase() ? "xo-topicchip on" : "xo-topicchip"}
-                        onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                    {(topicFilter || query || favFilter) && (
-                      <button className="xo-topicchip" onClick={() => { setTopicFilter(""); setQuery(""); setFavFilter(false); }}>
-                        ✕ clear
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
+              </div>
             )}
 
             {!loaded && <div className="xo-empty">Opening your journal…</div>}
@@ -2649,7 +3294,10 @@ Digest:
                                   {seg.type === "qa" && (
                                     <div className="xo-qa">
                                       <p className="xo-q">{seg.q}</p>
-                                      <p className="xo-a"><span className="xo-aibadge">AI</span><Linkify text={seg.a} /></p>
+                                      <p className="xo-a">
+                                        <span className="xo-aibadge">{aiLabel}</span><Linkify text={seg.a} />
+                                        <Sources list={seg.sources} />
+                                      </p>
                                     </div>
                                   )}
                                   {seg.type === "recap" && (
@@ -2706,110 +3354,61 @@ Digest:
             </div>
 
             <div className="xo-side">
-              <div className="xo-panel">
-                <h3>Mood — last 5 weeks</h3>
-                <div className="xo-minical">
-                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => <div className="mh" key={h}>{h}</div>)}
-                  {Array.from({ length: calPadStart }).map((_, i) => <div className="xo-mc dim" key={"pad" + i} />)}
-                  {calCells.map((c) => {
-                    const e = c.emotion ? emotionOf(c.emotion) : null;
-                    return (
-                      <div
-                        key={c.key}
-                        className="xo-mc"
-                        title={prettyDate(c.key, true) + (c.emotion ? " — " + emotionOf(c.emotion).label : "")}
-                        style={e ? { background: e.bg, borderColor: e.dot } : undefined}
-                      />
-                    );
-                  })}
+              {isWide && (
+                <div className="xo-layoutbar">
+                  <button
+                    className={editLayout ? "xo-panel-btn on" : "xo-panel-btn"}
+                    onClick={() => setEditLayout(!editLayout)}
+                    title="Drag panels to reorder, hide the ones you don't use"
+                  >
+                    {editLayout ? "✓ Done arranging" : "⠿ Arrange"}
+                  </button>
+                  {editLayout && <button className="xo-panel-btn" onClick={resetLayout}>Reset</button>}
                 </div>
-                <p className="xo-note" style={{ marginTop: 10, marginBottom: 0 }}>Each square is a day, colored by its dominant mood.</p>
-              </div>
-              {hasEntries && (
-                <div className="xo-panel">
-                  <h3>This week</h3>
-                  <div className="xo-weekbars">
-                    {last7.map((d) => (
-                      <div className="wb" key={d.key} title={prettyDate(d.key, true) + " — " + d.n + " note" + (d.n === 1 ? "" : "s")}>
-                        <div className="wbtrack"><div className="wbfill" style={{ height: Math.round(d.n / week7max * 100) + "%", opacity: d.n ? 1 : 0 }} /></div>
-                        <span>{d.lbl}</span>
-                      </div>
-                    ))}
+              )}
+              {orderPanels(sidePanels).map((p) => {
+                if (!p.show) return null;
+                const isHidden = hiddenPanels.includes(p.id);
+                if (isHidden && !editLayout) return null;
+                const isCollapsed = collapsedPanels.includes(p.id);
+                return (
+                  <div
+                    key={p.id}
+                    className={"xo-panel" + (editLayout ? " arranging" : "") + (isHidden ? " ghosted" : "") + (dragId === p.id ? " dragging" : "")}
+                    draggable={editLayout}
+                    onDragStart={() => setDragId(p.id)}
+                    onDragEnd={() => setDragId(null)}
+                    onDragOver={(e) => { if (editLayout) e.preventDefault(); }}
+                    onDrop={(e) => { e.preventDefault(); movePanel(dragId, p.id, sidePanels); setDragId(null); }}
+                  >
+                    <h3>
+                      <span className="xo-ptitle">
+                        {editLayout && <span className="xo-grip" title="Drag to reorder">⠿</span>}
+                        {p.title}
+                      </span>
+                      {isWide && (
+                        <span className="xo-pacts">
+                          {editLayout && (
+                            <button
+                              className="xo-act"
+                              title={isHidden ? "Show this panel" : "Hide this panel"}
+                              aria-label={isHidden ? "Show panel" : "Hide panel"}
+                              onClick={() => togglePanelHidden(p.id)}
+                            >{isHidden ? "＋" : "×"}</button>
+                          )}
+                          <button
+                            className="xo-act"
+                            title={isCollapsed ? "Expand" : "Collapse"}
+                            aria-label={isCollapsed ? "Expand panel" : "Collapse panel"}
+                            onClick={() => togglePanelCollapsed(p.id)}
+                          >{isCollapsed ? "▸" : "▾"}</button>
+                        </span>
+                      )}
+                    </h3>
+                    {!isCollapsed && p.body}
                   </div>
-                  <p className="xo-note" style={{ marginTop: 10, marginBottom: 0 }}>{notes7} note{notes7 === 1 ? "" : "s"} in the last 7 days</p>
-                </div>
-              )}
-              {moodMix.length > 0 && (
-                <div className="xo-panel">
-                  <h3>Mood mix</h3>
-                  {moodMix.map(([m, n]) => {
-                    const e = emotionOf(m);
-                    return (
-                      <div className="xo-statrow" key={m}>
-                        <span className="name" style={{ color: e.text }}>{e.label}</span>
-                        <span className="bar"><span className="fill" style={{ width: Math.round(n / moodMixMax * 100) + "%", background: e.dot }} /></span>
-                        <span className="n">{n}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {rewind && (
-                <div className="xo-panel">
-                  <h3>Rewind{rewind.seg.fav ? " ★" : ""}</h3>
-                  <p className="xo-note" style={{ marginBottom: 8 }}>
-                    {prettyDate(rewind.day)}{segTags(rewind.seg).length ? " · " + segTags(rewind.seg).join(" · ") : ""}
-                  </p>
-                  <div className="xo-rewindtext">
-                    {itemPlainText(rewind.seg).slice(0, 280)}{itemPlainText(rewind.seg).length > 280 ? "…" : ""}
-                  </div>
-                  <div className="xo-panel-row" style={{ marginTop: 10 }}>
-                    <button className="xo-panel-btn" onClick={() => setRewind(pickRewind(days))}>Show another</button>
-                  </div>
-                </div>
-              )}
-              {recentPhotos.length > 0 && (
-                <div className="xo-panel">
-                  <h3>Recent photos</h3>
-                  <div className="xo-photostrip">
-                    {recentPhotos.map((pk) => <StoredImage key={pk} imgKey={pk} />)}
-                  </div>
-                </div>
-              )}
-              {topicRows.length > 0 && (
-                <div className="xo-panel">
-                  <h3>Top topics</h3>
-                  {topicRows.map(([t, n]) => (
-                    <div
-                      className="xo-statrow click"
-                      key={t}
-                      title="Filter by this topic"
-                      onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
-                    >
-                      <span className="name">{t}</span>
-                      <span className="bar"><span className="fill" style={{ width: Math.round(n / topicMax * 100) + "%", background: "var(--accent)" }} /></span>
-                      <span className="n">{n}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {otd.length > 0 && (
-                <div className="xo-panel">
-                  <h3>On this day</h3>
-                  {otd.map((o) => {
-                    const ens = days[o.key].entries || [];
-                    const allSegs = ens.flatMap((en) => en.segments || []);
-                    const topics = [...new Set(allSegs.flatMap(segTags))].slice(0, 2).join(", ");
-                    const first = allSegs.find((s) => !s.type || s.type === "text");
-                    return (
-                      <p className="xo-note" key={o.key} style={{ margin: "0 0 8px" }}>
-                        <b style={{ color: "var(--body)" }}>{o.label}</b> you wrote about <em style={{ color: "var(--accent)", fontStyle: "normal" }}>{topics || "your day"}</em>
-                        {first ? <> — "{String(first.text).slice(0, 90)}{first.text.length > 90 ? "…" : ""}"</> : null}
-                      </p>
-                    );
-                  })}
-                </div>
-              )}
+                );
+              })}
             </div>
             </div>
           </>
@@ -3139,6 +3738,27 @@ function Login({ onDone }) {
         <button className="lg-go" onClick={go} disabled={busy || !email.trim() || pw.length < 6}>
           {busy ? "One sec…" : mode === "signup" ? "Create account" : "Sign in"}
         </button>
+
+        <div className="lg-or"><span>or</span></div>
+        <button
+          className="lg-google"
+          onClick={async () => {
+            setMsg("");
+            const { error } = await window.__sb.auth.signInWithOAuth({
+              provider: "google",
+              options: { redirectTo: window.location.origin },
+            });
+            if (error) setMsg(error.message);
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.2-3.8 6.6-9.500 6.6-16.1z"/>
+            <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.1 15.5 46 24 46z"/>
+            <path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.3-2.9.7-4.2v-5.7H4.5C3 17.1 2.1 20.4 2.1 24s.9 6.9 2.4 9.9l7.3-5.7z"/>
+            <path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 6.9 4.5 14.1l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/>
+          </svg>
+          Continue with Google
+        </button>
         {msg && <div className="lg-msg">{msg}</div>}
         <div className="lg-alt">
           {mode === "signup" ? (
@@ -3146,6 +3766,47 @@ function Login({ onDone }) {
           ) : (
             <>First time here?<button onClick={() => { setMode("signup"); setMsg(""); }}>Create account</button></>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================= invite gate (OAuth sign-ups carry no invite code yet) =================
+function InviteGate({ onDone }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const save = async () => {
+    if (!code.trim() || busy) return;
+    setBusy(true); setMsg("");
+    try {
+      const { error } = await window.__sb.auth.updateUser({ data: { invite: code.trim() } });
+      if (error) throw error;
+      onDone();
+    } catch (e) {
+      setMsg((e && e.message) || "Couldn't save that — try again.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="lg-root">
+      <style>{LG_CSS}</style>
+      <div className="lg-card">
+        <p className="lg-title">Journal<span>/ almost in</span></p>
+        <p className="lg-sub">One last thing — enter the invite code from whoever sent you here.</p>
+        <label>Invite code</label>
+        <input
+          type="text" autoFocus value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+          placeholder="e.g. XOCREW"
+        />
+        <button className="lg-go" onClick={save} disabled={busy || !code.trim()}>
+          {busy ? "One sec…" : "Continue"}
+        </button>
+        {msg && <div className="lg-msg">{msg}</div>}
+        <div className="lg-alt">
+          Wrong account?<button onClick={() => window.__sb.auth.signOut()}>Sign out</button>
         </div>
       </div>
     </div>
@@ -3173,6 +3834,11 @@ function AuthRoot() {
       fontFamily: "Inter, system-ui, sans-serif" }}>Opening your journal…</div>;
   }
   if (!session) return <Login onDone={refresh} />;
+  // Google sign-ups have no invite code yet — collect it before the journal opens,
+  // otherwise the AI proxy rejects every request from them.
+  if (!((session.user && session.user.user_metadata) || {}).invite) {
+    return <InviteGate onDone={refresh} />;
+  }
 
   window.__session = session;
   if (window.__storageFor !== session.user.id) {

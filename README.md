@@ -57,7 +57,11 @@ Create a new repository and upload this whole folder (keep `api/` inside it). Ei
    | `SUPABASE_SERVICE_KEY` | your service_role key (secret) |
    | `INVITE_CODE` | any word, e.g. `XOCREW` |
    | `DAILY_LIMIT` | optional — AI calls per person per day (default 300) |
-   | `MODEL` | optional — default `claude-3-5-haiku-latest`; for smarter sorting use `claude-sonnet-4-6` |
+   | `MODEL` | optional — default `claude-haiku-4-5` (cheapest). For smarter tagging use `claude-sonnet-5`, or `claude-opus-4-8` for the best quality |
+   | `WEB_SEARCH` | optional — set to `on` to let the AI search the web when a question needs current info. Off unless set. |
+   | `WEB_SEARCH_MAX_USES` | optional — max searches per question (default 3, max 10) |
+
+> **Web search cost:** $10 per 1,000 searches ($0.01 each) on top of normal token usage. It's only used for questions you ask (`@ai` or the Ask tab) — never for sorting entries, recaps, or goals. You must *also* turn it on per-account under **Customize → Web search**, so it's opt-in twice. Answers come with clickable sources.
 
 4. **Deploy.** You'll get a link like `https://your-journal.vercel.app`.
 
