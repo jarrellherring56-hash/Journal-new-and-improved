@@ -1,0 +1,16 @@
+# Vercel
+.vercel
+
+# Dependencies (none required, but just in case)
+node_modules
+
+# Secrets — never commit these; they go in Vercel's Environment Variables
+.env
+.env.*
+*.local
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea
+.vscode

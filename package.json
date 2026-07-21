@@ -1,0 +1,9 @@
+{
+  "name": "journal-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A private AI journal — static PWA front end with a serverless AI proxy.",
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,3088 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Journal</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="theme-color" content="#0a0b0e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Syncopate:wght@400;700&family=Karla:wght@400;500;700&family=Noto+Sans+JP:wght@400;700&family=Playfair+Display:wght@600;700&family=Bebas+Neue&family=Audiowide&family=Cormorant+Garamond:wght@500;600;700&family=Oswald:wght@400;500;600&family=Righteous&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>
+// ======== PASTE YOUR TWO SUPABASE VALUES HERE (Project Settings -> API) ========
+const SUPABASE_URL = "https://yzyswdtavffiemeaxjvf.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6eXN3ZHRhdmZmaWVtZWF4anZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MDk2NDEsImV4cCI6MjEwMDE4NTY0MX0.cOAsVvoxSjo5W2BqYw3IxUMZpwMifeJOc-bu4smfn6w";
+</script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>html,body{margin:0;padding:0;background:#0a0b0e;overflow-x:hidden;max-width:100%}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+/* @jsxRuntime classic */
+/* @jsx React.createElement */
+/* @jsxFrag React.Fragment */
+const { useState, useEffect, useRef } = React;
+
+// ---------- themes ----------
+const THEMES = {
+  mint:   { label: "Mint",          accent: "#3CE6A4", rgb: "60,230,164",  dark: "#1FBF83", btnText: "#0A0B0E" },
+  green:  { label: "Neon Green",    accent: "#39FF6B", rgb: "57,255,107",  dark: "#12D94A", btnText: "#04140A" },
+  purple: { label: "Purple Haze",   accent: "#B44BFF", rgb: "180,75,255",  dark: "#8A2BE2", btnText: "#14041A" },
+  red:    { label: "Neon Red",      accent: "#FF3B3B", rgb: "255,59,59",   dark: "#D91212", btnText: "#1A0404" },
+  blue:   { label: "Electric Blue", accent: "#3B82FF", rgb: "59,130,255",  dark: "#1257D9", btnText: "#041026" },
+  pink:   { label: "Hot Pink",      accent: "#FF2D95", rgb: "255,45,149",  dark: "#D9127A", btnText: "#1A0410" },
+  orange: { label: "Sunset Orange", accent: "#FF8A2B", rgb: "255,138,43",  dark: "#D96A12", btnText: "#1A0E04" },
+  white:  { label: "Ghost White",   accent: "#F2F2F2", rgb: "242,242,242", dark: "#BFBFBF", btnText: "#111111" },
+  // — The Weeknd album accents (each carries its own font/layout pack) —
+  trilogy:    { label: "Trilogy",     accent: "#DCE0E5", rgb: "220,224,229", dark: "#9AA1AB", btnText: "#0A0B0E", pack: "serif" },
+  kissland:   { label: "Kiss Land",   accent: "#2EE6C6", rgb: "46,230,198",  dark: "#14BFA0", btnText: "#03140F", pack: "neon" },
+  madness:    { label: "BBTM Gold",   accent: "#E7B94C", rgb: "231,185,76",  dark: "#C29419", btnText: "#191204", pack: "bold" },
+  starboy:    { label: "Starboy",     accent: "#FF2E51", rgb: "255,46,81",   dark: "#D91238", btnText: "#1A0408", pack: "chrome" },
+  melancholy: { label: "Melancholy",  accent: "#8193D6", rgb: "129,147,214", dark: "#5A6EBB", btnText: "#0A0D1A", pack: "soft" },
+  afterhours: { label: "After Hours", accent: "#F20D18", rgb: "242,13,24",   dark: "#BF0710", btnText: "#FFFFFF", pack: "cine" },
+  dawnfm:     { label: "Dawn FM",     accent: "#8FB4FF", rgb: "143,180,255", dark: "#5E8AE6", btnText: "#060B1A", pack: "retro" },
+  alter:      { label: "Alter",       accent: "#FF2438", rgb: "255,36,56",   dark: "#C2101F", btnText: "#FFFFFF", pack: "ritual" },
+};
+const BACKGROUNDS = {
+  slate:    { label: "Slate",       bg: "#0A0B0E", card: "#111318", line: "#20242C", dash: "#2A2F3A", inputbg: "#0E1014", ink: "#F2F3F5", body: "#D7DAE0", faint: "#7C8390", title: "#F7F8FA", strong: "#F2F3F5", strongRgb: "242,243,245", placeholder: "#4B515C" },
+  black:    { label: "Blackout",    bg: "#030403", card: "#0B0E0C", line: "#232823", dash: "#242A24", inputbg: "#060706", ink: "#F0F3F1", body: "#E4EAE5", faint: "#8E978F", title: "#FCFFFC", strong: "#F5F8F5", strongRgb: "245,248,245", placeholder: "#5F6A60" },
+  midnight: { label: "Midnight",    bg: "#04070F", card: "#0A101D", line: "#1E2638", dash: "#20293D", inputbg: "#060A14", ink: "#EEF2F8", body: "#E0E7F0", faint: "#8792A6", title: "#FBFDFF", strong: "#F2F6FC", strongRgb: "242,246,252", placeholder: "#5C6A80" },
+  violet:   { label: "Deep Violet", bg: "#0A0512", card: "#150C22", line: "#2B2140", dash: "#2E2444", inputbg: "#0E0818", ink: "#F2EEF8", body: "#E8E2F0", faint: "#968CA6", title: "#FDFBFF", strong: "#F6F2FC", strongRgb: "246,242,252", placeholder: "#6A5F80" },
+  charcoal: { label: "Charcoal",    bg: "#101013", card: "#1A1A1F", line: "#2E2E36", dash: "#303039", inputbg: "#141418", ink: "#F0F0F2", body: "#E6E6EA", faint: "#96969E", title: "#FDFDFF", strong: "#F4F4F6", strongRgb: "244,244,246", placeholder: "#6E6E78" },
+  snow:     { label: "Daylight",    bg: "#F4F3F7", card: "#FFFFFF", line: "#DCDAE4", dash: "#E4E2EC", inputbg: "#F7F6FA", ink: "#1D1B24", body: "#2C2A35", faint: "#6E6A7C", title: "#141219", strong: "#232030", strongRgb: "35,32,48", placeholder: "#9A96A8" },
+  lavender: { label: "Lavender",    bg: "#EAE4F4", card: "#FFFFFF", line: "#D6CDE8", dash: "#E0D8EE", inputbg: "#F3EFFA", ink: "#241E33", body: "#322A44", faint: "#756B8C", title: "#1C1630", strong: "#2A2240", strongRgb: "42,34,64", placeholder: "#A79DC0" },
+  blush:    { label: "Blush",       bg: "#F7EFF2", card: "#FFFFFF", line: "#E8D8DE", dash: "#EFDFE5", inputbg: "#FBF5F7", ink: "#2A1F26", body: "#3A2C34", faint: "#8A737E", title: "#201720", strong: "#33242E", strongRgb: "51,36,46", placeholder: "#B79FAA" },
+  ocean:    { label: "Deep Ocean",  bg: "#030A0D", card: "#0A151A", line: "#1B3038", dash: "#1E353E", inputbg: "#061013", ink: "#EDF6F8", body: "#DFEDF0", faint: "#83A0A8", title: "#FAFEFF", strong: "#F0FAFB", strongRgb: "240,250,251", placeholder: "#52707A" },
+  espresso: { label: "Espresso",    bg: "#0D0705", card: "#180F0B", line: "#33241C", dash: "#362820", inputbg: "#120A07", ink: "#F5EFEA", body: "#EDE3DB", faint: "#A18D80", title: "#FFFBF7", strong: "#F8F1EB", strongRgb: "248,241,235", placeholder: "#7A6154" },
+  // — The Weeknd album backdrops —
+  trilogyn:  { label: "Trilogy Noir", bg: "#070708", card: "#101012", line: "#242428", dash: "#2C2C31", inputbg: "#0B0B0D", ink: "#F2F2F3", body: "#E3E3E6", faint: "#8E8E96", title: "#FBFBFC", strong: "#F4F4F5", strongRgb: "244,244,245", placeholder: "#68686F" },
+  afterhrs:  { label: "After Hours",  bg: "#0B0304", card: "#160709", line: "#331116", dash: "#3A151B", inputbg: "#100405", ink: "#F8EFF0", body: "#EFE0E2", faint: "#A67F84", title: "#FFF9F9", strong: "#F8F0F0", strongRgb: "248,240,240", placeholder: "#7A5257" },
+  altar:     { label: "Dark Altar",   bg: "#04050A", card: "#0A0C15", line: "#1E2233", dash: "#262B40", inputbg: "#070910", ink: "#F1F2F8", body: "#DDE0EC", faint: "#7E86A0", title: "#F8F9FF", strong: "#F1F3FA", strongRgb: "241,243,250", placeholder: "#4E5570" },
+};
+// One-tap album looks: accent + backdrop + animated scene together.
+const ALBUM_PRESETS = [
+  { id: "trilogy",    label: "Trilogy",      theme: "trilogy",    bg: "trilogyn" },
+  { id: "kissland",   label: "Kiss Land",    theme: "kissland",   bg: "ocean" },
+  { id: "madness",    label: "BBTM",         theme: "madness",    bg: "espresso" },
+  { id: "starboy",    label: "Starboy",      theme: "starboy",    bg: "trilogyn" },
+  { id: "melancholy", label: "Melancholy",   theme: "melancholy", bg: "midnight" },
+  { id: "afterhours", label: "After Hours",  theme: "afterhours", bg: "afterhrs" },
+  { id: "dawnfm",     label: "Dawn FM",      theme: "dawnfm",     bg: "violet" },
+  { id: "alter",      label: "Alter",        theme: "alter",      bg: "altar" },
+];
+const DEFAULT_SETTINGS = {
+  name: "Journal", theme: "mint", bg: "slate", tagline: "", customTagline: "",
+};
+
+// ---------- emotion palette ----------
+const EMOTIONS = {
+  happy:      { label: "Happy",      dot: "#FFD24B", bg: "rgba(255,210,75,0.13)",  text: "#FFE08A" },
+  sad:        { label: "Sad",        dot: "#5FA8FF", bg: "rgba(95,168,255,0.13)",  text: "#9CC6FF" },
+  anxious:    { label: "Anxious",    dot: "#FF8A3C", bg: "rgba(255,138,60,0.13)",  text: "#FFAF75" },
+  calm:       { label: "Calm",       dot: "#59E3B3", bg: "rgba(89,227,179,0.13)",  text: "#93EECB" },
+  excited:    { label: "Excited",    dot: "#FF2D95", bg: "rgba(255,45,149,0.14)",  text: "#FF7DBE" },
+  angry:      { label: "Angry",      dot: "#FF4B5C", bg: "rgba(255,75,92,0.15)",   text: "#FF8B96" },
+  nostalgic:  { label: "Nostalgic",  dot: "#B689FF", bg: "rgba(182,137,255,0.13)", text: "#CFAFFF" },
+  hopeful:    { label: "Hopeful",    dot: "#35E0E6", bg: "rgba(53,224,230,0.13)",  text: "#7FEBEF" },
+  frustrated: { label: "Frustrated", dot: "#E89A5C", bg: "rgba(232,154,92,0.13)",  text: "#F0BA8E" },
+  neutral:    { label: "Neutral",    dot: "#9B93B0", bg: "rgba(155,147,176,0.13)", text: "#BDB6CE" },
+};
+const emotionOf = (e) => EMOTIONS[(e || "").toLowerCase()] || EMOTIONS.neutral;
+
+// mood valence for the trend line: brighter (+2) … heavier (−2)
+const VALENCE = { happy: 2, excited: 2, hopeful: 1.5, calm: 1, nostalgic: 0.5, neutral: 0, anxious: -1, frustrated: -1, sad: -1.5, angry: -2 };
+
+// ---------- privacy lock (per-device, stores only a hash) ----------
+const PIN_KEY = "daybook:pin:v1";
+async function hashPin(pin) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("daybook:" + pin));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---------- rewind: resurface a random past note (starred ones get a boost) ----------
+function pickRewind(days) {
+  const today = dayKey();
+  const pool = [];
+  for (const k of Object.keys(days)) {
+    if (k === today) continue;
+    for (const en of days[k].entries || []) {
+      for (const s of en.segments || []) {
+        if (!s.type || s.type === "text" || s.type === "qa") pool.push({ day: k, seg: s });
+      }
+    }
+  }
+  if (!pool.length) return null;
+  const favs = pool.filter((p) => p.seg.fav);
+  const src = favs.length && Math.random() < 0.5 ? favs : pool;
+  return src[Math.floor(Math.random() * src.length)];
+}
+
+// ---------- date helpers ----------
+const dayKey = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const prettyDate = (key, short = false) => {
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  if (short) return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const today = dayKey();
+  const yest = dayKey(new Date(Date.now() - 86400000));
+  const base = date.toLocaleDateString(undefined, {
+    weekday: "long", month: "long", day: "numeric",
+    year: y !== new Date().getFullYear() ? "numeric" : undefined,
+  });
+  if (key === today) return `Today — ${base}`;
+  if (key === yest) return `Yesterday — ${base}`;
+  return base;
+};
+const nowTime = () =>
+  new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const STORAGE_KEY = "daybook:days:v1";
+const SETTINGS_KEY = "daybook:settings:v1";
+const TRASH_KEY = "daybook:trash:v1";
+const GOALS_KEY = "daybook:goals:v1";
+const LETTER_KEY = "daybook:lastletter:v1";
+const TRASH_DAYS = 30; // auto-purge after this many days
+const IMG_PREFIX = "daybook:img:";
+
+const STARTER_PROMPTS = [
+  "What's one moment from today you don't want to forget?",
+  "What's taking up the most space in your head right now?",
+  "Describe today in three honest sentences.",
+  "What's something small that made today better?",
+  "If tonight had a soundtrack, what would it be and why?",
+  "What are you avoiding thinking about?",
+  "What would you tell yourself from a week ago?",
+];
+
+// ---------- linkify ----------
+const URL_RE = /(https?:\/\/[^\s<>"')]+|www\.[^\s<>"')]+)/gi;
+function Linkify({ text }) {
+  const parts = String(text).split(URL_RE);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (!part) return null;
+        if (part.match(URL_RE)) {
+          const href = part.startsWith("http") ? part : `https://${part}`;
+          return (
+            <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="xo-link">
+              {part}
+            </a>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+// ---------- image compression ----------
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1000;
+        let { width, height } = img;
+        if (width > max || height > max) {
+          const s = Math.min(max / width, max / height);
+          width = Math.round(width * s);
+          height = Math.round(height * s);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => reject(new Error("Couldn't read image"));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("Couldn't read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------- vibe profile ----------
+// days structure: { "2026-07-20": { entries: [{id, time, segments:[{id,type,text,topic,emotion,...}]}] } }
+function normalizeDays(d) {
+  const out = {};
+  let changed = false;
+  for (const k of Object.keys(d || {})) {
+    const day = d[k];
+    if (day && Array.isArray(day.entries)) { out[k] = day; continue; }
+    if (day && Array.isArray(day.sections)) {
+      // legacy topic-section shape → one entry per old section
+      changed = true;
+      out[k] = {
+        entries: day.sections.map((sec) => ({
+          id: uid(),
+          time: (sec.items[0] && sec.items[0].time) || "",
+          segments: sec.items.map((it) => ({ ...it, topic: it.topic || sec.topic })),
+        })),
+      };
+    }
+  }
+  return { days: out, changed };
+}
+function eachSegment(days, fn) {
+  for (const k of Object.keys(days)) {
+    for (const entry of days[k].entries || []) {
+      for (const seg of entry.segments || []) fn(k, entry, seg);
+    }
+  }
+}
+function buildVibeProfile(days) {
+  const topics = {};
+  const moods = {};
+  let count = 0;
+  eachSegment(days, (k, entry, seg) => {
+    count++;
+    if (seg.topic) topics[seg.topic] = (topics[seg.topic] || 0) + 1;
+    const m = (seg.emotion || "neutral").toLowerCase();
+    moods[m] = (moods[m] || 0) + 1;
+  });
+  const top = (obj, n) =>
+    Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n)
+      .map(([k, v]) => `${k} (${v})`).join(", ");
+  return {
+    count,
+    text: `Total items: ${count}. Frequent topics: ${top(topics, 5) || "none yet"}. Mood mix: ${top(moods, 4) || "none yet"}.`,
+  };
+}
+
+// ---------- AI calls ----------
+function extractJSONObject(raw) {
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  const s = cleaned.indexOf("{");
+  const e = cleaned.lastIndexOf("}");
+  if (s === -1 || e === -1 || e <= s) throw new Error("No JSON found in response");
+  return JSON.parse(cleaned.slice(s, e + 1));
+}
+
+async function callClaude(prompt, maxTokens = 1000) {
+  const token = window.__session && window.__session.access_token;
+  const response = await fetch("/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+    body: JSON.stringify({ prompt, max_tokens: maxTokens }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || ("API request failed: " + response.status));
+  return String(data.text || "").trim();
+}
+
+async function classifyEntry(text, vibeText, existingTopics = []) {
+  const topicHint = existingTopics.length
+    ? `\nIMPORTANT for organization: this journal already has these topic labels: ${existingTopics.join(", ")}. If a segment fits one of them, REUSE that exact label (same spelling) instead of inventing a similar new one. Only create a new label when nothing existing fits.`
+    : "";
+  const raw = await callClaude(`You label journal writing. Split the entry below into segments wherever the topic or emotion shifts (often sentence by sentence, but keep consecutive sentences about the same thing together as one segment). Segments may contain links — keep them intact.
+
+For each segment return:
+- "text": the segment's exact text from the entry
+- "topic": a short 1-3 word label (e.g. "Day Trading", "Family Memory", "Links", "Work Stress")
+- "emotion": exactly one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral${topicHint}
+
+Also write "tagline": one short line (under 14 words, no quotes, no emoji) for the top of this person's journal. Make it play off what they keep writing about and their overall vibe, in a cool, late-night tone that speaks to them directly. Their journal profile so far (including this entry): ${vibeText}
+
+Respond with ONLY a raw JSON object: {"segments": [...], "tagline": "..."} — no markdown, no backticks.
+
+Entry:
+"""${text}"""`, 8000);
+  const parsed = extractJSONObject(raw);
+  const segments = (parsed.segments || [])
+    .filter((s) => s && s.text)
+    .map((s) => ({
+      text: String(s.text).trim(),
+      topic: String(s.topic || "Notes").trim(),
+      emotion: String(s.emotion || "neutral").toLowerCase(),
+    }));
+  return { segments, tagline: String(parsed.tagline || "").trim() };
+}
+
+async function answerQuestion(question) {
+  const raw = await callClaude(`You are the AI inside someone's personal journal. Answer their question below helpfully and warmly in a few sentences (under 120 words). Then, on the LAST line only, output a JSON object like {"topic": "1-3 word topic label", "emotion": "one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral"} describing the question. Do not use markdown.
+
+Question:
+"""${question}"""`);
+  const lines = raw.split("\n").filter((l) => l.trim());
+  let meta = { topic: "AI Answers", emotion: "neutral" };
+  let answer = raw;
+  try {
+    const last = lines[lines.length - 1];
+    if (last.trim().startsWith("{")) {
+      meta = { ...meta, ...JSON.parse(last) };
+      answer = lines.slice(0, -1).join("\n").trim();
+    }
+  } catch (e) { /* keep defaults */ }
+  return { answer, topic: String(meta.topic || "AI Answers"), emotion: String(meta.emotion || "neutral").toLowerCase() };
+}
+
+// ---------- long-entry handling ----------
+const CHUNK_SIZE = 4000;
+function splitIntoChunks(text, max = CHUNK_SIZE) {
+  if (text.length <= max) return [text];
+  const chunks = [];
+  let current = "";
+  const paragraphs = text.split(/\n{2,}/);
+  const pieces = [];
+  for (const p of paragraphs) {
+    if (p.length <= max) pieces.push(p);
+    else {
+      // split on sentence ends without regex lookbehind (Safari-safe)
+      const parts = p.split(/([.!?]+\s+)/);
+      const sents = [];
+      for (let i = 0; i < parts.length; i += 2) {
+        const sent = (parts[i] || "") + (parts[i + 1] || "");
+        if (sent) sents.push(sent);
+      }
+      let buf = "";
+      for (const sent of sents) {
+        if ((buf + sent).length > max && buf) { pieces.push(buf.trim()); buf = sent; }
+        else buf += sent;
+      }
+      if (buf.trim()) pieces.push(buf.trim());
+    }
+  }
+  for (const piece of pieces) {
+    if ((current + "\n\n" + piece).length > max && current) {
+      chunks.push(current);
+      current = piece;
+    } else {
+      current = current ? current + "\n\n" + piece : piece;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+async function withRetry(fn, tries = 2) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); }
+    catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+async function classifyLongEntry(text, vibeText, existingTopics = []) {
+  const chunks = splitIntoChunks(text);
+  const allSegments = [];
+  let tagline = "";
+  for (const chunk of chunks) {
+    const result = await withRetry(() => classifyEntry(chunk, vibeText, existingTopics));
+    allSegments.push(...result.segments);
+    if (result.tagline) tagline = result.tagline;
+  }
+  return { segments: allSegments, tagline };
+}
+
+// ---------- storage ----------
+async function loadJSON(key, fallback, shared = false) {
+  try {
+    const res = await window.storage.get(key, shared);
+    return res && res.value ? JSON.parse(res.value) : fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+async function saveJSON(key, value, shared = false) {
+  try {
+    await window.storage.set(key, JSON.stringify(value), shared);
+    return true;
+  } catch (e) {
+    console.error("Storage save failed:", e);
+    return false;
+  }
+}
+
+// ---------- stored image ----------
+const imgCache = {};
+function StoredImage({ imgKey }) {
+  const [src, setSrc] = useState(imgCache[imgKey] || null);
+  const [failed, setFailed] = useState(false);
+  const [big, setBig] = useState(false);
+  useEffect(() => {
+    if (src) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await window.storage.get(imgKey);
+        if (alive && res && res.value) {
+          imgCache[imgKey] = res.value;
+          setSrc(res.value);
+        } else if (alive) setFailed(true);
+      } catch (err) {
+        if (alive) setFailed(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, [imgKey, src]);
+
+  if (failed) return <span className="xo-imgfail">image unavailable</span>;
+  if (!src) return <span className="xo-imgloading">loading photo…</span>;
+  return (
+    <img
+      src={src}
+      alt="Journal attachment"
+      className={big ? "xo-photo xo-photo-big" : "xo-photo"}
+      onClick={() => setBig(!big)}
+      title={big ? "Click to shrink" : "Click to enlarge"}
+    />
+  );
+}
+
+// square gallery thumbnail for the Photos tab (loads via the same cache as StoredImage)
+function Thumb({ imgKey, onOpen }) {
+  const [src, setSrc] = useState(imgCache[imgKey] || null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (src) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await window.storage.get(imgKey);
+        if (alive && res && res.value) { imgCache[imgKey] = res.value; setSrc(res.value); }
+        else if (alive) setFailed(true);
+      } catch (err) { if (alive) setFailed(true); }
+    })();
+    return () => { alive = false; };
+  }, [imgKey, src]);
+  if (failed) return <div className="xo-galtile fail" title="image unavailable" />;
+  if (!src) return <div className="xo-galtile loading" />;
+  return <img className="xo-galtile" src={src} alt="Journal photo" loading="lazy" onClick={onOpen} />;
+}
+
+// ---------- insights helpers ----------
+function dominantEmotionByDay(days) {
+  const out = {};
+  for (const k of Object.keys(days)) {
+    const tally = {};
+    for (const entry of days[k].entries || []) {
+      for (const seg of entry.segments || []) {
+        const m = (seg.emotion || "neutral").toLowerCase();
+        tally[m] = (tally[m] || 0) + 1;
+      }
+    }
+    const best = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+    if (best) out[k] = best[0];
+  }
+  return out;
+}
+function computeStreak(days) {
+  let streak = 0;
+  const d = new Date();
+  if (!days[dayKey(d)]) d.setDate(d.getDate() - 1); // today not written yet doesn't break it
+  while (days[dayKey(d)]) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+  return streak;
+}
+function buildDigest(days, numDays = 7) {
+  const keys = Object.keys(days).sort().slice(-numDays);
+  let out = [];
+  for (const k of keys) {
+    for (const entry of days[k].entries || []) {
+      const topics = [...new Set((entry.segments || []).map((s) => s.topic).filter(Boolean))].join("/");
+      const texts = (entry.segments || [])
+        .filter((s) => !s.type || s.type === "text" || s.type === "qa")
+        .map((s) => (s.type === "qa" ? s.q : s.text))
+        .join(" | ")
+        .slice(0, 220);
+      if (texts) out.push(`${k} · ${topics}: ${texts}`);
+    }
+  }
+  return out.join("\n").slice(0, 6000);
+}
+function itemPlainText(item) {
+  if (item.type === "qa") return `Q: ${item.q}\nA: ${item.a}`;
+  if (item.type === "image") return "[photo]";
+  return item.text || "";
+}
+
+// ---------- shared card styling for login + lock screens ----------
+const LG_CSS = `
+  .lg-root { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(900px 420px at 50% -8%, rgba(60,230,164,0.09) 0%, transparent 60%), #0a0b0e;
+    font-family: 'Inter', system-ui, sans-serif; padding: 20px; }
+  .lg-card { width: 100%; max-width: 380px; background: #111318; border: 1px solid #20242c;
+    border-radius: 20px; padding: 26px; }
+  .lg-title { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; letter-spacing: -.02em;
+    color: #f7f8fa; font-size: 22px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  .lg-title::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #3ce6a4;
+    box-shadow: 0 0 12px rgba(60,230,164,.8); }
+  .lg-title span { color: #7c8390; font-weight: 400; }
+  .lg-sub { color: #7c8390; font-size: 14px; margin: 0 0 20px; }
+  .lg-card label { display: block; font: 600 10px 'Inter', sans-serif; letter-spacing: .12em;
+    text-transform: uppercase; color: #7c8390; margin: 12px 0 5px; }
+  .lg-card input { width: 100%; box-sizing: border-box; background: #0e1014; border: 1px solid #20242c;
+    border-radius: 10px; color: #f2f3f5; font: 14px 'Inter', sans-serif; padding: 11px 12px;
+    outline: none; caret-color: #3ce6a4; transition: border-color .2s; }
+  .lg-card input:focus { border-color: #3ce6a4; }
+  .lg-go { width: 100%; margin-top: 18px; background: #3ce6a4; border: 1px solid #3ce6a4;
+    color: #0a0b0e; font: 600 13px 'Inter', sans-serif;
+    padding: 12px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+  .lg-go:hover:not(:disabled) { box-shadow: 0 4px 24px rgba(60,230,164,.35); }
+  .lg-go:disabled { opacity: .5; }
+  .lg-alt { margin-top: 14px; text-align: center; color: #7c8390; font-size: 13.5px; }
+  .lg-alt button { background: none; border: none; color: #3ce6a4; cursor: pointer;
+    font: 600 13.5px 'Inter', sans-serif; padding: 0 4px; }
+  .lg-msg { margin-top: 12px; color: #ff6b81; font-size: 13.5px; text-align: center; }
+`;
+
+// ---------- privacy lock screen ----------
+function LockScreen({ onUnlock }) {
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState(false);
+  const go = async () => {
+    if (val.length < 4) return;
+    if ((await hashPin(val.trim())) === localStorage.getItem(PIN_KEY)) onUnlock();
+    else { setErr(true); setVal(""); }
+  };
+  return (
+    <div className="lg-root">
+      <style>{LG_CSS}</style>
+      <div className="lg-card">
+        <p className="lg-title">Journal<span>/ locked</span></p>
+        <p className="lg-sub">Enter your PIN to open your journal.</p>
+        <input
+          type="password" inputMode="numeric" autoFocus value={val}
+          style={{ textAlign: "center", letterSpacing: "0.4em", fontSize: 18 }}
+          onChange={(e) => { setVal(e.target.value.replace(/\D/g, "")); setErr(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") go(); }}
+        />
+        <button className="lg-go" onClick={go} disabled={val.length < 4}>Unlock</button>
+        {err && <div className="lg-msg">Wrong PIN — try again.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ---------- mood trend line (last 30 days) ----------
+function MoodTrend({ days }) {
+  const pts = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = dayKey(d);
+    if (!days[k]) continue;
+    let sum = 0, n = 0;
+    for (const en of days[k].entries || []) {
+      for (const s of en.segments || []) {
+        const v = VALENCE[(s.emotion || "neutral").toLowerCase()];
+        sum += v === undefined ? 0 : v; n++;
+      }
+    }
+    if (n) pts.push({ v: sum / n, k });
+  }
+  if (pts.length < 2) {
+    return <div className="xo-empty" style={{ padding: "18px 8px" }}>Journal a few more days and your mood line will draw itself.</div>;
+  }
+  const W = 620, H = 190, pl = 16, pr = 16, pt = 14, pb = 14;
+  // space the days that have entries evenly across the width, so the chart always fills
+  const X = (idx) => pl + (pts.length === 1 ? 0.5 : idx / (pts.length - 1)) * (W - pl - pr);
+  const Y = (v) => pt + (2 - v) / 4 * (H - pt - pb);
+  let dl = "M " + X(0) + " " + Y(pts[0].v);
+  for (let j = 1; j < pts.length; j++) dl += " L " + X(j) + " " + Y(pts[j].v);
+  const area = dl + " L " + X(pts.length - 1) + " " + Y(-2) + " L " + X(0) + " " + Y(-2) + " Z";
+  return (
+    <svg viewBox={"0 0 " + W + " " + H} width="100%">
+      <defs>
+        <linearGradient id="mtrend" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[2, 0, -2].map((v) => (
+        <line key={v} x1={pl} y1={Y(v)} x2={W - pr} y2={Y(v)} stroke="var(--line)" strokeDasharray={v === 0 ? "" : "3 5"} />
+      ))}
+      <text x={pl} y={Y(2) - 4} fill="var(--faint)" fontSize="9" letterSpacing="2">BRIGHTER</text>
+      <text x={pl} y={Y(-2) + 11} fill="var(--faint)" fontSize="9" letterSpacing="2">HEAVIER</text>
+      <path d={area} fill="url(#mtrend)" />
+      <path d={dl} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
+      {pts.map((p, j) => <circle key={p.k} cx={X(j)} cy={Y(p.v)} r="3" fill="var(--accent)"><title>{p.k}</title></circle>)}
+    </svg>
+  );
+}
+
+// ---------- year in pixels ----------
+function YearPixels({ domEmotions }) {
+  const year = new Date().getFullYear();
+  const jan1 = new Date(year, 0, 1);
+  const total = Math.round((new Date(year + 1, 0, 1) - jan1) / 86400000);
+  const todayK = dayKey();
+  const cells = [];
+  for (let i = 0; i < jan1.getDay(); i++) cells.push(null);
+  for (let i = 0; i < total; i++) cells.push(dayKey(new Date(year, 0, 1 + i)));
+  return (
+    <div className="xo-yearpixels">
+      {cells.map((k, idx) => {
+        if (k === null) return <i key={"pad" + idx} className="pad" />;
+        const e = domEmotions[k] ? emotionOf(domEmotions[k]) : null;
+        return (
+          <i
+            key={k}
+            className={k > todayK ? "future" : ""}
+            title={prettyDate(k, true) + (e ? " — " + e.label : "")}
+            style={e ? { background: e.dot, borderColor: e.dot } : undefined}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- per-theme brand icon (replaces the blinking dot; tints to the accent) ----------
+function ThemeIcon({ theme }) {
+  const p = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinejoin: "round", strokeLinecap: "round" };
+  const f = { fill: "currentColor" };
+  const paths = {
+    trilogy:    <path {...p} d="M12 4l8 15H4z" />,                                                                 /* triangle — three */
+    kissland:   <path {...f} d="M12 21s-7-4.7-9.3-9.2C1 8.5 2.7 5 6 5c2 0 3.2 1.2 4 2.3C10.8 6.2 12 5 14 5c3.3 0 5 3.5 3.3 6.8C19 16.3 12 21 12 21z" />, /* heart — kiss */
+    madness:    <path {...f} d="M12 2c.6 5.2 1.6 8.4 8 10-6.4 1.6-7.4 4.8-8 10-.6-5.2-1.6-8.4-8-10 6.4-1.6 7.4-4.8 8-10z" />, /* sparkle */
+    starboy:    <path {...f} d="M12 2l2.9 6.3 6.8.7-5.1 4.6 1.5 6.7L12 17.8 5 20.9l1.5-6.7L1.4 9.6l6.8-.7z" />,      /* star */
+    melancholy: <path {...f} d="M12 3s6.5 7.2 6.5 11.2a6.5 6.5 0 0 1-13 0C5.5 10.2 12 3 12 3z" />,                  /* raindrop */
+    afterhours: <path {...f} d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />,                                   /* crescent moon */
+    dawnfm:     <g {...p}><path d="M3 19h18" /><path d="M7.5 19a4.5 4.5 0 0 1 9 0" /><path d="M12 4v3M4.8 8.2l1.5 1.5M19.2 8.2l-1.5 1.5" /></g>, /* sunrise */
+    alter:      <g><circle cx="12" cy="12" r="8" {...p} /><circle cx="12" cy="12" r="2.4" {...f} /></g>,             /* halo ring */
+    mint:       <path {...p} d="M11 20C6 20 4 16 4 11c5 0 7 1 8 4 1-4 4-6 8-6 0 6-3 9-8 9z" />,                     /* leaf */
+  };
+  const book = <g {...p}><path d="M12 6c-1.6-1.3-4-2-7-2v13c3 0 5.4.7 7 2 1.6-1.3 4-2 7-2V4c-3 0-5.4.7-7 2z" /><path d="M12 6v13" /></g>;
+  return <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">{paths[theme] || book}</svg>;
+}
+
+// ---------- app ----------
+function XOJournal() {
+  const [days, setDays] = useState({});
+  const [trash, setTrash] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState("journal"); // journal | wall
+  const [draft, setDraft] = useState("");
+  const [pendingImgs, setPendingImgs] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [busyMode, setBusyMode] = useState("");
+  const [error, setError] = useState("");
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const [showCustomize, setShowCustomize] = useState(false);
+  const [dayCollapsed, setDayCollapsed] = useState({});
+  const [rewind, setRewind] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+  const [askMsgs, setAskMsgs] = useState([]);
+  const [askInput, setAskInput] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [favFilter, setFavFilter] = useState(false);
+  const [locked, setLocked] = useState(() => !!localStorage.getItem(PIN_KEY));
+  const [pinField, setPinField] = useState("");
+  const [hasPin, setHasPin] = useState(() => !!localStorage.getItem(PIN_KEY));
+  const [query, setQuery] = useState("");
+  const [topicFilter, setTopicFilter] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [listening, setListening] = useState(false);
+  const [recap, setRecap] = useState("");
+  const [recapBusy, setRecapBusy] = useState(false);
+  const [welcome, setWelcome] = useState("");
+  const [welcomeBusy, setWelcomeBusy] = useState(false);
+  const [goals, setGoals] = useState([]);
+  const [newGoal, setNewGoal] = useState("");
+  const [goalSugs, setGoalSugs] = useState([]);
+  const [sugBusy, setSugBusy] = useState(false);
+  const textareaRef = useRef(null);
+  const fileRef = useRef(null);
+  const recRef = useRef(null);
+  const promptRequested = useRef(false);
+
+  // ----- initial load -----
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [d, s, t, g] = await Promise.all([
+        loadJSON(STORAGE_KEY, {}),
+        loadJSON(SETTINGS_KEY, DEFAULT_SETTINGS),
+        loadJSON(TRASH_KEY, []),
+        loadJSON(GOALS_KEY, []),
+      ]);
+      if (!alive) return;
+      setGoals(g);
+      const merged = { ...DEFAULT_SETTINGS, ...s };
+      const norm = normalizeDays(d);
+      if (norm.changed) saveJSON(STORAGE_KEY, norm.days);
+      // auto-purge trash older than TRASH_DAYS
+      const cutoff = Date.now() - TRASH_DAYS * 86400000;
+      const kept = [];
+      for (const entry of t) {
+        const when = entry.deletedAt || Date.now(); // missing timestamp = keep, never assume old
+        if (when >= cutoff) kept.push(entry.deletedAt ? entry : { ...entry, deletedAt: when });
+        else if (entry.item && entry.item.type === "image" && entry.item.imgKey) {
+          window.storage.delete(entry.item.imgKey).catch(() => {});
+        }
+      }
+      if (kept.length !== t.length) saveJSON(TRASH_KEY, kept);
+      setDays(norm.days);
+      setTrash(kept);
+      setSettings(merged);
+      setLoaded(true);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // ----- style pack: fonts & layout follow the picked theme; plain colors stay clean -----
+  const theme = THEMES[settings.theme] || THEMES.green;
+  const bgTheme = BACKGROUNDS[settings.bg] || BACKGROUNDS.black;
+  const pack = theme.pack || "clean";
+  const neon = pack === "neon";
+
+  const updateSettings = (patch) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      saveJSON(SETTINGS_KEY, next);
+      return next;
+    });
+  };
+
+  // ----- welcome-back note (every open; the ↻ button re-rolls it) -----
+  const genWelcome = () => {
+    const vibe = buildVibeProfile(days);
+    if (vibe.count === 0) {
+      setWelcome(STARTER_PROMPTS[Math.floor(Math.random() * STARTER_PROMPTS.length)]);
+      return;
+    }
+    // how long they've been away
+    const today = dayKey();
+    const sortedKeys = Object.keys(days).sort();
+    const lastKey = sortedKeys[sortedKeys.length - 1];
+    let awayText = "for a little while";
+    if (lastKey === today) awayText = "since earlier today";
+    else if (lastKey) {
+      const [y, m, d] = lastKey.split("-").map(Number);
+      const daysAway = Math.max(1, Math.round((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000));
+      awayText = daysAway <= 1 ? "since yesterday" : `for ${daysAway} days`;
+    }
+    const digest = buildDigest(days, 5);
+    setWelcomeBusy(true);
+    (async () => {
+      try {
+        const q = await callClaude(`You are the AI living inside someone's private journal. They just opened it back up — they've been away ${awayText}, and you've been sitting with their recent entries in the meantime. Below is a digest of what they last wrote (dates, topic labels, snippets).
+
+Write them a short note (2-3 sentences, 30-70 words total) that shows you were genuinely thinking about their entries while they were gone: reference one or two SPECIFIC things they actually wrote about (name the thing — the trade, the person, the memory — not just the topic label), notice a thread or mood if you see one, and end with ONE question that invites them to pick the thread back up. Warm, cool, late-night tone. Speak directly to them. No markdown, no emoji, no quotes, no greeting like "hey" or "welcome back".
+
+Their recent entries:
+"""${digest}"""
+
+Their overall profile: ${vibe.text}`, 400);
+        setWelcome(q.trim());
+      } catch (err) {
+        const idx = new Date().getDate() % STARTER_PROMPTS.length;
+        setWelcome(STARTER_PROMPTS[idx]);
+      } finally {
+        setWelcomeBusy(false);
+      }
+    })();
+  };
+  useEffect(() => {
+    if (!loaded || promptRequested.current) return;
+    promptRequested.current = true;
+    genWelcome();
+  }, [loaded, days]);
+
+  // ----- rewind: surface one past note per open -----
+  useEffect(() => {
+    if (loaded) setRewind(pickRewind(days));
+  }, [loaded]);
+
+  // ----- weekly letter: first open each Sunday, the AI writes the week up -----
+  useEffect(() => {
+    if (!loaded) return;
+    const now = new Date();
+    if (now.getDay() !== 0) return;
+    const sundayK = dayKey(now);
+    (async () => {
+      const last = await loadJSON(LETTER_KEY, "");
+      if (last === sundayK) return;
+      const digest = buildDigest(days, 7);
+      if (!digest) return;
+      try {
+        const text = await callClaude(`You are the AI living inside someone's private journal, writing them a short Sunday letter about their week. Below is a digest of their entries (dates, topic labels, snippets). Write 100-160 words: what they focused on, how their moods moved, one specific moment worth remembering, and one gentle thought for the week ahead. Speak directly to them ("you"), warm and honest, late-night tone. No markdown, no lists, no emoji, no greeting.
+
+Their week:
+"""${digest}"""`, 800);
+        if (text) {
+          const time = nowTime();
+          pushEntry(sundayK, {
+            id: uid(), time,
+            segments: [{ id: uid(), type: "recap", text: text.trim(), topic: "Weekly Letter", emotion: "calm", time }],
+          });
+          saveJSON(LETTER_KEY, sundayK);
+        }
+      } catch (e) { /* try again next open */ }
+    })();
+  }, [loaded]);
+
+  // ----- image intake -----
+  const takeFiles = async (files) => {
+    const imgs = [...files].filter((f) => f.type && f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    setError("");
+    try {
+      const compressed = await Promise.all(imgs.map(compressImage));
+      setPendingImgs((prev) => [
+        ...prev,
+        ...compressed.map((dataUrl) => ({ id: uid(), dataUrl })),
+      ]);
+    } catch (e) {
+      console.error(e);
+      setError("Couldn't read that image — try a different one.");
+    }
+  };
+
+  const onPaste = (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    const files = [];
+    for (const it of items) {
+      if (it.kind === "file" && it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) {
+      e.preventDefault();
+      takeFiles(files);
+    }
+  };
+
+  const removePending = (id) =>
+    setPendingImgs((prev) => prev.filter((p) => p.id !== id));
+
+  // ----- voice input -----
+  const toggleMic = () => {
+    if (listening) {
+      try { recRef.current && recRef.current.stop(); } catch (e) { /* already stopped */ }
+      setListening(false);
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setError("Voice input isn't supported in this browser — try Chrome.");
+      return;
+    }
+    try {
+      const r = new SR();
+      r.continuous = true;
+      r.interimResults = false;
+      r.onresult = (e) => {
+        let t = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) t += e.results[i][0].transcript;
+        }
+        if (t) setDraft((d) => (d ? d + " " : "") + t.trim());
+      };
+      r.onerror = (e) => {
+        setListening(false);
+        if (e.error === "not-allowed") setError("Microphone access was blocked — allow it in your browser settings.");
+      };
+      r.onend = () => setListening(false);
+      r.start();
+      recRef.current = r;
+      setListening(true);
+      setError("");
+    } catch (e) {
+      setError("Couldn't start the microphone.");
+    }
+  };
+
+  // ----- merge helper -----
+  // ----- add an entry to a day (kept whole, in order) -----
+  const pushEntry = (key, entry) => {
+    setDays((prev) => {
+      const cur = prev[key] || { entries: [] };
+      const next = { ...prev, [key]: { ...cur, entries: [...(cur.entries || []), entry] } };
+      saveJSON(STORAGE_KEY, next);
+      return next;
+    });
+  };
+
+  // ----- add journal entry -----
+  const addEntry = async () => {
+    const text = draft.trim();
+    if ((!text && !pendingImgs.length) || busy) return;
+    setBusy(true); setBusyMode("entry"); setError("");
+    try {
+      const time = nowTime();
+      const entrySegments = [];
+
+      if (text) {
+        const vibe = buildVibeProfile(days);
+        const existingTopics = {};
+        eachSegment(days, (k2, en, sg) => {
+          if (sg.topic) existingTopics[sg.topic] = (existingTopics[sg.topic] || 0) + 1;
+        });
+        const topicList = Object.entries(existingTopics).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([t]) => t);
+        let segments = [], tagline = "";
+        try {
+          const result = await classifyLongEntry(text, vibe.text, topicList);
+          segments = result.segments; tagline = result.tagline;
+        } catch (aiErr) {
+          console.error("Classification failed, saving unsorted:", aiErr);
+          setError("Saved, but the AI couldn't sort it — " + (aiErr && aiErr.message ? aiErr.message : "unknown error"));
+        }
+        if (!segments.length) segments = [{ text, topic: "Notes", emotion: "neutral" }];
+        for (const seg of segments) {
+          entrySegments.push({ id: uid(), type: "text", text: seg.text, topic: seg.topic, emotion: seg.emotion, time });
+        }
+        if (tagline) updateSettings({ tagline });
+      }
+
+      if (pendingImgs.length) {
+        for (const p of pendingImgs) {
+          const key = IMG_PREFIX + p.id;
+          await window.storage.set(key, p.dataUrl);
+          entrySegments.push({ id: uid(), type: "image", imgKey: key, topic: "Photos", emotion: "neutral", time });
+        }
+      }
+
+      pushEntry(dayKey(), { id: uid(), time, segments: entrySegments });
+      setDraft("");
+      setPendingImgs([]);
+      textareaRef.current && textareaRef.current.focus();
+    } catch (e) {
+      console.error(e);
+      setError("Couldn't save that entry — please try again.");
+    } finally {
+      setBusy(false); setBusyMode("");
+    }
+  };
+
+  // ----- ask the AI -----
+  const askAI = async () => {
+    let text = draft.trim();
+    if (!text || busy) return;
+    text = text.replace(/^(@ai|hey ai|ai[,:])\s*/i, "");
+    setBusy(true); setBusyMode("ask"); setError("");
+    try {
+      const { answer, topic, emotion } = await withRetry(() => answerQuestion(text));
+      const time = nowTime();
+      pushEntry(dayKey(), {
+        id: uid(), time,
+        segments: [{ id: uid(), type: "qa", q: text, a: answer, topic, emotion, time }],
+      });
+      setDraft("");
+      textareaRef.current && textareaRef.current.focus();
+    } catch (e) {
+      console.error(e);
+      setError("The AI couldn't answer just now — please try again.");
+    } finally {
+      setBusy(false); setBusyMode("");
+    }
+  };
+
+  const looksLikeQuestion = /^(@ai|hey ai|ai[,:])/i.test(draft.trim());
+  const submit = () => (looksLikeQuestion ? askAI() : addEntry());
+
+  // ----- talk to your journal (Ask tab) -----
+  const askJournal = async () => {
+    const question = askInput.trim();
+    if (!question || askBusy) return;
+    setAskMsgs((m) => [...m, { role: "u", text: question }]);
+    setAskInput(""); setAskBusy(true);
+    try {
+      // pull notes that share words with the question, plus the recent digest
+      const words = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
+      const hits = [];
+      eachSegment(days, (k2, en, sg) => {
+        const txt = itemPlainText(sg).toLowerCase();
+        if (words.some((w) => txt.includes(w))) hits.push(k2 + ": " + itemPlainText(sg).slice(0, 160));
+      });
+      const relevant = hits.slice(-30).join("\n").slice(0, 4000);
+      const digest = buildDigest(days, 30);
+      const history = askMsgs.slice(-6).map((m) => (m.role === "u" ? "Them: " : "You: ") + m.text).join("\n");
+      const raw = await withRetry(() => callClaude(`You are the AI living inside someone's private journal. They're asking you about their own life, and you have their entries below. Answer from their entries — quote or reference specific dates and things they actually wrote. If the entries don't contain the answer, say so honestly instead of guessing. Under 150 words, warm and direct, no markdown.
+
+Conversation so far:
+${history || "(first question)"}
+
+Notes matching their question:
+"""${relevant || "none found"}"""
+
+Their recent entries:
+"""${digest || "no entries yet"}"""
+
+Their question: "${question}"`, 700));
+      setAskMsgs((m) => [...m, { role: "a", text: raw.trim() }]);
+    } catch (e) {
+      setAskMsgs((m) => [...m, { role: "a", text: "I couldn't reach the AI just now — try again in a moment." }]);
+    } finally {
+      setAskBusy(false);
+    }
+  };
+
+  // ----- favorites -----
+  const toggleFav = (dKey, entryId, segId) => {
+    setDays((prev) => {
+      const cur = prev[dKey];
+      if (!cur) return prev;
+      const entries = (cur.entries || []).map((en) =>
+        en.id === entryId
+          ? { ...en, segments: en.segments.map((s) => (s.id === segId ? { ...s, fav: !s.fav } : s)) }
+          : en
+      );
+      const next = { ...prev, [dKey]: { ...cur, entries } };
+      saveJSON(STORAGE_KEY, next);
+      return next;
+    });
+  };
+
+  // ----- privacy lock -----
+  const setPin = async () => {
+    const p = pinField.trim();
+    if (p.length < 4) { setError("PIN needs at least 4 digits."); return; }
+    localStorage.setItem(PIN_KEY, await hashPin(p));
+    setHasPin(true); setPinField(""); setError("");
+  };
+  const removePin = async () => {
+    if ((await hashPin(pinField.trim())) === localStorage.getItem(PIN_KEY)) {
+      localStorage.removeItem(PIN_KEY);
+      setHasPin(false); setPinField(""); setError("");
+    } else {
+      setError("Enter your current PIN to remove the lock.");
+    }
+  };
+
+  // ----- edit -----
+  const startEdit = (item) => { setEditingId(item.id); setEditText(item.text || ""); };
+  const saveEdit = (dKey, entryId) => {
+    const newText = editText.trim();
+    setDays((prev) => {
+      const cur = prev[dKey];
+      if (!cur) return prev;
+      const entries = (cur.entries || []).map((en) =>
+        en.id === entryId
+          ? { ...en, segments: en.segments.map((s) => (s.id === editingId ? { ...s, text: newText || s.text } : s)) }
+          : en
+      );
+      const next = { ...prev, [dKey]: { ...cur, entries } };
+      saveJSON(STORAGE_KEY, next);
+      return next;
+    });
+    setEditingId(null); setEditText("");
+  };
+
+  // ----- delete → recently deleted -----
+
+  const deleteItem = (dKey, entryId, segId) => {
+    const dayData = days[dKey];
+    if (!dayData) return;
+    let removed = null;
+    for (const en of dayData.entries || []) {
+      if (en.id === entryId) {
+        const gone = (en.segments || []).find((s) => s.id === segId);
+        if (gone) removed = gone;
+      }
+    }
+    // functional update: safe even for rapid back-to-back deletes
+    setDays((prev) => {
+      const cur = prev[dKey];
+      if (!cur) return prev;
+      const entries = (cur.entries || [])
+        .map((en) => (en.id === entryId ? { ...en, segments: en.segments.filter((s) => s.id !== segId) } : en))
+        .filter((en) => en.segments.length > 0);
+      const next = { ...prev };
+      if (entries.length === 0) delete next[dKey];
+      else next[dKey] = { ...cur, entries };
+      saveJSON(STORAGE_KEY, next);
+      return next;
+    });
+    if (removed) {
+      // photos stay in storage until purged forever, so they can be restored
+      const entry = { tid: uid(), item: removed, topic: removed.topic || "Notes", day: dKey, deletedAt: Date.now() };
+      setTrash((prevT) => {
+        const nextT = [entry, ...prevT];
+        saveJSON(TRASH_KEY, nextT);
+        return nextT;
+      });
+    }
+  };
+
+  const restoreItem = (tid) => {
+    const entry = trash.find((t) => t.tid === tid);
+    if (!entry) return;
+    const seg = { ...entry.item, topic: entry.item.topic || entry.topic };
+    pushEntry(entry.day, { id: uid(), time: seg.time || "", segments: [seg] });
+    setTrash((prevT) => {
+      const nextT = prevT.filter((t) => t.tid !== tid);
+      saveJSON(TRASH_KEY, nextT);
+      return nextT;
+    });
+  };
+
+  const purgeItem = (tid) => {
+    const entry = trash.find((t) => t.tid === tid);
+    if (entry && entry.item && entry.item.type === "image" && entry.item.imgKey) {
+      window.storage.delete(entry.item.imgKey).catch(() => {});
+      delete imgCache[entry.item.imgKey];
+    }
+    setTrash((prevT) => {
+      const nextT = prevT.filter((t) => t.tid !== tid);
+      saveJSON(TRASH_KEY, nextT);
+      return nextT;
+    });
+  };
+
+  const emptyTrash = () => {
+    for (const entry of trash) {
+      if (entry.item && entry.item.type === "image" && entry.item.imgKey) {
+        window.storage.delete(entry.item.imgKey).catch(() => {});
+        delete imgCache[entry.item.imgKey];
+      }
+    }
+    setTrash(() => {
+      saveJSON(TRASH_KEY, []);
+      return [];
+    });
+  };
+
+  // ----- goals / self-improvement -----
+  const saveGoals = (updater) => {
+    setGoals((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveJSON(GOALS_KEY, next);
+      return next;
+    });
+  };
+  const addGoal = (text, from = "you") => {
+    const t = String(text || "").trim();
+    if (!t) return;
+    const g = { id: uid(), text: t, from, createdAt: Date.now(), checkins: [], done: false };
+    saveGoals((prev) => [g, ...prev]);
+  };
+  const checkInGoal = (id) => {
+    const today = dayKey();
+    saveGoals((prev) => prev.map((g) =>
+      g.id === id && !g.checkins.includes(today)
+        ? { ...g, checkins: [...g.checkins, today] }
+        : g
+    ));
+  };
+  const toggleGoalDone = (id) =>
+    saveGoals((prev) => prev.map((g) => (g.id === id ? { ...g, done: !g.done } : g)));
+  const deleteGoal = (id) =>
+    saveGoals((prev) => prev.filter((g) => g.id !== id));
+
+  const suggestGoals = async () => {
+    if (sugBusy) return;
+    setSugBusy(true); setError("");
+    try {
+      const digest = buildDigest(days, 10);
+      const vibe = buildVibeProfile(days);
+      const raw = await withRetry(() => callClaude(`You are the AI inside someone's private journal. Based on their recent entries below, suggest 3 small, concrete self-improvement goals that fit what they actually write about and struggle with or care about. Each goal should be doable and specific (e.g. "Journal each trade's reason before entering it", not "be better at trading").
+
+Respond with ONLY a raw JSON array: [{"goal": "short goal text under 12 words", "why": "one sentence tying it to something specific they wrote"}] — no markdown.
+
+Their entries:
+"""${digest}"""
+
+Profile: ${vibe.text}`, 700));
+      const cleaned = raw.replace(/```json|```/g, "").trim();
+      const s = cleaned.indexOf("["); const e2 = cleaned.lastIndexOf("]");
+      const arr = JSON.parse(cleaned.slice(s, e2 + 1));
+      setGoalSugs(arr.filter((x) => x && x.goal).slice(0, 3));
+    } catch (e) {
+      setError("Couldn't come up with suggestions — try again.");
+    } finally {
+      setSugBusy(false);
+    }
+  };
+
+  const goalWeek = (g) => {
+    const cells = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      cells.push({ key: dayKey(d), hit: g.checkins.includes(dayKey(d)) });
+    }
+    return cells;
+  };
+  const weekCount = (g) => goalWeek(g).filter((c) => c.hit).length;
+
+  // ----- vibe recap -----
+  const genRecap = async () => {
+    if (recapBusy) return;
+    setRecapBusy(true); setError("");
+    try {
+      const digest = buildDigest(days, 7);
+      const text = await withRetry(() => callClaude(`You are the AI inside someone's personal journal. Below is a digest of their last stretch of entries (topic labels and snippets by date). Write them a "vibe recap": a warm, honest 100-160 word note back to them about what they focused on, how their moods moved, and one gentle observation or encouragement. Speak directly to them ("you"). No markdown, no lists, no emoji.
+
+Digest:
+"""${digest}"""`, 800));
+      setRecap(text);
+    } catch (e) {
+      setError("Couldn't build the recap — try again.");
+    } finally {
+      setRecapBusy(false);
+    }
+  };
+  const saveRecap = () => {
+    if (!recap) return;
+    const time = nowTime();
+    pushEntry(dayKey(), {
+      id: uid(), time,
+      segments: [{ id: uid(), type: "recap", text: recap, topic: "Vibe Recap", emotion: "calm", time }],
+    });
+    setRecap("");
+  };
+
+  // ----- full backup + import (move data between versions/accounts) -----
+  const importFileRef = useRef(null);
+  const backupAll = async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      const images = {};
+      try {
+        const res = await window.storage.list(IMG_PREFIX);
+        for (const k of (res && res.keys) || []) {
+          try {
+            const r = await window.storage.get(k);
+            if (r && r.value) images[k] = r.value;
+          } catch (e) { }
+        }
+      } catch (e) { }
+      const payload = { v: 1, exportedAt: Date.now(), days, settings, goals, trash, images };
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "journal-backup.json";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally { setBackupBusy(false); }
+  };
+
+  const importBackup = (file) => {
+    if (!file || importBusy) return;
+    setImportBusy(true); setImportMsg("");
+    const reader = new FileReader();
+    reader.onerror = () => { setImportBusy(false); setImportMsg("Couldn't read that file."); };
+    reader.onload = async () => {
+      try {
+        const b = JSON.parse(reader.result);
+        if (!b || typeof b !== "object" || !b.days) throw new Error("not a backup");
+        // photos first, so entries that reference them work
+        const imgs = b.images || {};
+        for (const k of Object.keys(imgs)) {
+          try { await window.storage.set(k, imgs[k]); } catch (e) { }
+        }
+        // entries: normalize legacy shape, merge without duplicating
+        const norm = normalizeDays(b.days).days;
+        const hadNothing = Object.keys(days).length === 0;
+        setDays((prev) => {
+          const next = { ...prev };
+          for (const k of Object.keys(norm)) {
+            const existing = (next[k] && next[k].entries) || [];
+            const ids = new Set(existing.map((e) => e.id));
+            const incoming = (norm[k].entries || []).filter((e) => !ids.has(e.id));
+            next[k] = { entries: [...existing, ...incoming] };
+          }
+          saveJSON(STORAGE_KEY, next);
+          return next;
+        });
+        if (Array.isArray(b.goals) && b.goals.length) {
+          saveGoals((prev) => {
+            const ids = new Set(prev.map((g) => g.id));
+            return [...b.goals.filter((g) => g && g.id && !ids.has(g.id)), ...prev];
+          });
+        }
+        if (Array.isArray(b.trash) && b.trash.length) {
+          setTrash((prevT) => {
+            const ids = new Set(prevT.map((t) => t.tid));
+            const nextT = [...b.trash.filter((t) => t && t.tid && !ids.has(t.tid)), ...prevT];
+            saveJSON(TRASH_KEY, nextT);
+            return nextT;
+          });
+        }
+        if (hadNothing && b.settings) {
+          const s = b.settings;
+          updateSettings({
+            name: s.name || settings.name, theme: s.theme || settings.theme,
+            bg: s.bg || settings.bg, tagline: s.tagline || "", customTagline: s.customTagline || "",
+          });
+        }
+        setImportMsg("Imported! Your old entries are in.");
+      } catch (e) {
+        setImportMsg("That doesn't look like a journal backup file.");
+      } finally {
+        setImportBusy(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // ----- export -----
+  const exportJournal = () => {
+    const lines = [settings.name || "My Journal"];
+    if (settings.tagline) lines.push(settings.tagline);
+    lines.push("");
+    const keys = Object.keys(days).sort((a, b) => (a < b ? 1 : -1));
+    for (const k of keys) {
+      lines.push("=== " + prettyDate(k) + " ===");
+      for (const entry of days[k].entries || []) {
+        lines.push(`-- entry ${entry.time || ""} --`);
+        for (const seg of entry.segments || []) {
+          lines.push(`  [${seg.topic || "Notes"} · ${seg.emotion || "neutral"}] ${itemPlainText(seg).replace(/\n/g, "\n    ")}`);
+        }
+      }
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (settings.name || "journal").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").toLowerCase() + "-export.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const resetAll = async () => {
+    try {
+      const res = await window.storage.list(IMG_PREFIX);
+      if (res && res.keys) {
+        for (const k of res.keys) await window.storage.delete(k).catch(() => {});
+      }
+    } catch (e) { /* no images */ }
+    try { await window.storage.delete(STORAGE_KEY); } catch (e) { /* no key */ }
+    try { await window.storage.delete(TRASH_KEY); } catch (e) { /* no key */ }
+    setDays({});
+    setTrash([]);
+    updateSettings({ tagline: "" });
+    setConfirmReset(false);
+  };
+
+  // ----- derived -----
+  const dayKeys = Object.keys(days).sort((a, b) => (a < b ? 1 : -1));
+  const hasEntries = dayKeys.length > 0;
+
+  const allTopics = {};
+  eachSegment(days, (k, en, sg) => {
+    if (sg.topic) allTopics[sg.topic] = (allTopics[sg.topic] || 0) + 1;
+  });
+  const topTopics = Object.entries(allTopics).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([t]) => t);
+
+  const q = query.trim().toLowerCase();
+  const segMatches = (seg) => {
+    const topicOk = !topicFilter || (seg.topic || "").toLowerCase() === topicFilter.toLowerCase();
+    const textOk = !q || itemPlainText(seg).toLowerCase().includes(q);
+    const favOk = !favFilter || seg.fav;
+    return topicOk && textOk && favOk;
+  };
+  const filteredDays = dayKeys
+    .map((k) => {
+      const entries = (days[k].entries || []).filter((en) => (en.segments || []).some(segMatches));
+      return { key: k, entries };
+    })
+    .filter((d) => d.entries.length > 0);
+
+  // on this day
+  const now = new Date();
+  const monthAgo = new Date(now); monthAgo.setMonth(now.getMonth() - 1);
+  const yearAgo = new Date(now); yearAgo.setFullYear(now.getFullYear() - 1);
+  const otd = [
+    { label: "One month ago", key: dayKey(monthAgo) },
+    { label: "One year ago", key: dayKey(yearAgo) },
+  ].filter((o) => days[o.key]);
+
+  // mood calendar (last 35 days)
+  const domEmotions = dominantEmotionByDay(days);
+  const calCells = [];
+  for (let i = 34; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = dayKey(d);
+    calCells.push({ key: k, emotion: domEmotions[k] || null });
+  }
+  const streak = computeStreak(days);
+
+  let totalNotes = 0;
+  eachSegment(days, () => totalNotes++);
+  const weekTally = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    for (const en of (days[dayKey(d)] && days[dayKey(d)].entries) || []) {
+      for (const s of en.segments || []) {
+        const mm = (s.emotion || "neutral").toLowerCase();
+        weekTally[mm] = (weekTally[mm] || 0) + 1;
+      }
+    }
+  }
+  const weekMoodTop = Object.entries(weekTally).sort((a, b) => b[1] - a[1])[0];
+  const weekMood = weekMoodTop ? emotionOf(weekMoodTop[0]) : null;
+  const calPadStart = (() => { const d = new Date(); d.setDate(d.getDate() - 34); return d.getDay(); })();
+
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k2 = dayKey(d);
+    let n = 0;
+    for (const en of (days[k2] && days[k2].entries) || []) n += (en.segments || []).length;
+    last7.push({ key: k2, n, lbl: ["S", "M", "T", "W", "T", "F", "S"][d.getDay()] });
+  }
+  const week7max = Math.max(1, ...last7.map((x) => x.n));
+  const notes7 = last7.reduce((s, x) => s + x.n, 0);
+  const moodTallyAll = {};
+  eachSegment(days, (k2, en, sg) => { const mm = (sg.emotion || "neutral").toLowerCase(); moodTallyAll[mm] = (moodTallyAll[mm] || 0) + 1; });
+  const moodMix = Object.entries(moodTallyAll).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const moodMixMax = moodMix.length ? moodMix[0][1] : 1;
+  const topicRows = Object.entries(allTopics).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const topicMax = topicRows.length ? topicRows[0][1] : 1;
+  const allPhotos = [];
+  for (const k of dayKeys) {
+    for (const en of days[k].entries || []) {
+      for (const s of en.segments || []) {
+        if (s.type === "image" && s.imgKey) allPhotos.push({ imgKey: s.imgKey, day: k, time: s.time || en.time || "" });
+      }
+    }
+  }
+  const recentPhotos = allPhotos.slice(0, 6).map((p) => p.imgKey);
+  let anyFav = false;
+  eachSegment(days, (k2, en, sg) => { if (sg.fav) anyFav = true; });
+
+  const showPromptCard =
+    loaded && view === "journal" && (welcome || welcomeBusy);
+
+  if (locked) return <LockScreen onUnlock={() => setLocked(false)} />;
+
+  return (
+    <div
+      className={"xo-root sk-" + pack + " m-" + (settings.theme || "")}
+      style={{
+        "--accent": theme.accent,
+        "--accent-rgb": theme.rgb,
+        "--accent-dark": theme.dark,
+        "--btn-text": theme.btnText,
+        "--bg": bgTheme.bg,
+        "--card": bgTheme.card,
+        "--line": bgTheme.line,
+        "--dash": bgTheme.dash,
+        "--inputbg": bgTheme.inputbg,
+        "--ink": bgTheme.ink,
+        "--body": bgTheme.body,
+        "--faint": bgTheme.faint,
+        "--title": bgTheme.title,
+        "--strong": bgTheme.strong,
+        "--strong-rgb": bgTheme.strongRgb,
+        "--placeholder": bgTheme.placeholder,
+      }}
+    >
+      <style>{`
+        .xo-root {
+          --soft: rgba(var(--accent-rgb), 0.12);
+          --disp: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+          --bodyfont: 'Inter', system-ui, sans-serif;
+          min-height: 100vh;
+          background:
+            radial-gradient(1100px 500px at 80% -10%, rgba(var(--accent-rgb), 0.07), transparent 60%),
+            radial-gradient(900px 420px at 8% 0%, rgba(var(--strong-rgb), 0.04), transparent 55%),
+            var(--bg);
+          color: var(--ink);
+          font-family: var(--bodyfont);
+          padding: 28px clamp(16px, 4vw, 56px) 60px;
+        }
+        .xo-root ::selection { background: var(--accent); color: var(--btn-text); }
+        .xo-shell { max-width: 1180px; margin: 0 auto; position: relative; z-index: 1; }
+
+        /* ---------- header ---------- */
+        .xo-top { display: flex; align-items: center; gap: 16px; margin-bottom: 6px; flex-wrap: wrap; }
+        .xo-brand { display: flex; align-items: center; gap: 12px; }
+        .xo-icon { display: inline-flex; align-items: center; justify-content: center; color: var(--accent); flex: none; animation: xoglow 3s ease-in-out infinite; }
+        @keyframes xopulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+        @keyframes xoglow { 0%, 100% { filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), 0.45)); } 50% { filter: drop-shadow(0 0 11px rgba(var(--accent-rgb), 0.85)); } }
+        @media (prefers-reduced-motion: reduce) { .xo-icon { animation: none; filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.5)); } }
+        .xo-title { font-family: var(--disp); font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--title); }
+        .xo-title span { color: var(--faint); font-weight: 400; }
+        .xo-tabs { display: flex; gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 99px; padding: 4px; flex-wrap: wrap; }
+        .xo-tab { background: none; border: none; color: var(--faint); padding: 8px 18px; border-radius: 99px; cursor: pointer; font: 500 13px var(--bodyfont); transition: color .2s, background .25s; }
+        .xo-tab:hover { color: var(--ink); }
+        .xo-tab.on { background: var(--strong); color: var(--bg); font-weight: 600; }
+        .xo-tab:focus-visible { outline: 2px solid var(--accent); }
+        .xo-spacer { flex: 1; }
+        .xo-gear { background: transparent; border: 1px solid var(--dash); color: var(--faint); padding: 8px 16px; border-radius: 99px; cursor: pointer; font: 500 12.5px var(--bodyfont); transition: all .2s; white-space: nowrap; }
+        .xo-gear:hover { color: var(--ink); border-color: var(--faint); transform: translateY(-1px); }
+        .xo-gear:focus-visible { outline: 2px solid var(--accent); }
+        .xo-sub { color: var(--faint); margin: 8px 0 20px; font-size: 14px; }
+        .xo-sub.vibe { color: var(--body); font-style: italic; }
+
+        /* ---------- KPI cards ---------- */
+        .xo-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 14px 0; }
+        .xo-kpi { background: linear-gradient(180deg, rgba(var(--strong-rgb), 0.02), transparent 60%), var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; transition: transform .25s, border-color .25s; }
+        .xo-kpi:hover { transform: translateY(-3px); border-color: var(--dash); }
+        .xo-kpi h4 { font: 600 10.5px var(--bodyfont); color: var(--faint); margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.14em; }
+        .xo-kpi .val { font-family: var(--disp); font-size: 28px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; color: var(--ink); }
+        .xo-kpi .val .unit { font-size: 15px; color: var(--faint); font-weight: 500; letter-spacing: 0; }
+        .xo-kpi .val.mood { font-size: 22px; }
+        .xo-kpi.hero { grid-column: span 2; background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.10), var(--card) 55%); }
+        .xo-kpi.hero .val { font-size: 40px; color: var(--accent); }
+        @media (max-width: 700px) { .xo-kpi.hero { grid-column: span 1; } .xo-kpi.hero .val { font-size: 32px; } }
+
+        /* ---------- layout ---------- */
+        .xo-grid2 { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
+        .xo-side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; scrollbar-width: thin; }
+        @media (max-width: 1000px) { .xo-grid2 { grid-template-columns: 1fr; } .xo-side { position: static; } }
+
+        .xo-panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px; margin: 0 0 14px; transition: border-color .25s; }
+        .xo-panel:hover { border-color: var(--dash); }
+        .xo-panel h3 { font-family: var(--disp); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 14px; color: var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .xo-panel label { display: block; font: 600 10px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px; }
+        .xo-panel input[type="text"] { width: 100%; box-sizing: border-box; background: var(--inputbg); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: 13.5px var(--bodyfont); padding: 9px 12px; outline: none; caret-color: var(--accent); transition: border-color .2s; }
+        .xo-panel input[type="text"]:focus { border-color: var(--accent); }
+        .xo-note { font-size: 12px; color: var(--faint); line-height: 1.7; margin: 0; }
+        .xo-subhead { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--ink); margin: 30px 0 12px; }
+
+        .xo-swatches { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+        .xo-swatch { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; padding: 0; }
+        .xo-swatch.sel { border-color: var(--strong) !important; }
+        .xo-swatch:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+        .xo-panel-done { margin-top: 14px; background: var(--accent); color: var(--btn-text); border: 1px solid var(--accent); font: 600 12.5px var(--bodyfont); padding: 9px 18px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-panel-done:hover { box-shadow: 0 4px 24px rgba(var(--accent-rgb), 0.35); transform: translateY(-1px); }
+        .xo-panel-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+        .xo-panel-btn { background: transparent; border: 1px solid var(--dash); color: var(--faint); font: 500 12.5px var(--bodyfont); padding: 8px 16px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-panel-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--faint); transform: translateY(-1px); }
+        .xo-panel-btn:disabled { opacity: 0.5; cursor: default; }
+
+        /* ---------- mood mini calendar ---------- */
+        .xo-minical { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; max-width: 340px; }
+        .xo-minical .mh { font-size: 9px; color: var(--faint); text-align: center; text-transform: uppercase; letter-spacing: 0.1em; padding: 2px; }
+        .xo-mc { aspect-ratio: 1; border-radius: 8px; background: var(--inputbg); border: 1px solid var(--line); transition: transform .15s; }
+        .xo-mc:hover { transform: scale(1.1); }
+        .xo-mc.dim { opacity: 0.25; border-style: dashed; background: transparent; }
+        .xo-callegend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+        .xo-callegend span { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); }
+        .xo-callegend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+        .xo-recapbox { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: rgba(var(--accent-rgb), 0.07); border: 1px solid rgba(var(--accent-rgb), 0.25); color: var(--body); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
+
+        .xo-promptcard { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 14px; padding: 14px 18px; margin: 0 0 14px; color: var(--body); font-size: 13.5px; line-height: 1.6; transition: transform .2s; }
+        .xo-promptcard:hover { transform: translateX(3px); }
+        .xo-promptcard b { display: block; font: 600 10px var(--bodyfont); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+
+        /* ---------- search + topics ---------- */
+        .xo-searchrow { display: flex; gap: 10px; margin: 0 0 10px; }
+        .xo-search { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; color: var(--ink); font: 13.5px var(--bodyfont); outline: none; caret-color: var(--accent); transition: border-color .2s; }
+        .xo-search:focus { border-color: var(--accent); }
+        .xo-search::placeholder { color: var(--placeholder); }
+        .xo-topicchips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .xo-topicchip { border: 1px solid var(--line); background: var(--card); color: var(--faint); font: 500 12px var(--bodyfont); padding: 5px 12px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-topicchip:hover { color: var(--ink); }
+        .xo-topicchip.on { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.45); background: var(--soft); }
+
+        /* ---------- composer ---------- */
+        .xo-composer { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px; margin: 0 0 14px; transition: border-color .25s; }
+        .xo-composer:focus-within { border-color: rgba(var(--accent-rgb), 0.55); }
+        .xo-composer textarea { width: 100%; border: none; outline: none; resize: vertical; min-height: 92px; font: 14.5px/1.6 var(--bodyfont); color: var(--ink); background: transparent; box-sizing: border-box; caret-color: var(--accent); }
+        .xo-composer textarea::placeholder { color: var(--placeholder); }
+
+        .xo-pending { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .xo-thumb { position: relative; }
+        .xo-thumb img { height: 64px; width: 64px; object-fit: cover; border-radius: 10px; border: 1px solid var(--dash); display: block; }
+        .xo-thumb button { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; border: none; background: var(--card); color: #ff6b81; font-size: 12px; line-height: 1; cursor: pointer; box-shadow: 0 0 0 1px var(--line); }
+
+        .xo-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+        .xo-hint { color: var(--faint); font-size: 12px; flex: 1; min-width: 160px; }
+        .xo-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .xo-attach, .xo-mic, .xo-ask { background: transparent; border: 1px solid var(--dash); color: var(--faint); font: 500 12.5px var(--bodyfont); padding: 9px 15px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-attach:hover:not(:disabled), .xo-mic:hover:not(:disabled), .xo-ask:hover:not(:disabled) { color: var(--ink); border-color: var(--faint); transform: translateY(-1px); }
+        .xo-mic.live { background: var(--accent); border-color: var(--accent); color: var(--btn-text); font-weight: 600; animation: xopulse 1.4s infinite; }
+        @media (prefers-reduced-motion: reduce) { .xo-mic.live { animation: none; } }
+        .xo-attach:focus-visible, .xo-mic:focus-visible, .xo-ask:focus-visible, .xo-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .xo-add { background: var(--accent); border: 1px solid var(--accent); color: var(--btn-text); font: 600 12.5px var(--bodyfont); padding: 10px 18px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-add:hover:not(:disabled) { box-shadow: 0 4px 24px rgba(var(--accent-rgb), 0.35); transform: translateY(-1px); }
+        .xo-ask:disabled, .xo-attach:disabled, .xo-mic:disabled, .xo-add:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
+        .xo-error { color: #ff6b81; font-size: 13px; margin-top: 10px; }
+
+        /* ---------- day cards ---------- */
+        .xo-daycard { background: var(--card); border: 1px solid var(--line); border-radius: 20px; margin-bottom: 14px; overflow: hidden; transition: border-color .25s; }
+        .xo-daycard:hover { border-color: var(--dash); }
+        .xo-dayhead { display: flex; align-items: center; gap: 12px; padding: 15px 20px; cursor: pointer; user-select: none; flex-wrap: wrap; margin: 0; }
+        .xo-dayhead h2 { font-family: var(--disp); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 0; color: var(--ink); white-space: nowrap; }
+        .xo-chev { color: var(--faint); font-size: 10px; transition: transform .25s; }
+        .xo-daycard.open .xo-chev { transform: rotate(90deg); }
+        .xo-daycount { color: var(--faint); font-size: 12px; white-space: nowrap; }
+        .xo-daybody { padding: 0 16px 14px; animation: xorise .25s ease both; }
+        @keyframes xorise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .xo-daybody { animation: none; } }
+
+        .xo-section { background: var(--inputbg); border: 1px solid var(--line); border-left: 3px solid rgba(var(--accent-rgb), 0.55); border-radius: 14px; padding: 13px 15px; margin-bottom: 10px; }
+        .xo-section:last-child { margin-bottom: 0; }
+
+        .xo-flow { display: flex; flex-direction: column; gap: 2px; }
+        .xo-seg { display: grid; grid-template-columns: 1fr 84px; gap: 12px; align-items: start; padding: 3px 0; }
+        .xo-segmain { min-width: 0; font-size: 14px; line-height: 1.75; color: var(--body); }
+        .xo-hl { padding: 2px 7px; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+        .xo-segside { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 4px; text-align: right; }
+        .xo-emolabel { font: 600 9.5px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+        .xo-segacts { display: inline-flex; gap: 2px; opacity: 0.4; transition: opacity .15s; }
+        .xo-seg:hover .xo-segacts { opacity: 1; }
+        .xo-entrytime { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; }
+        .xo-sidetopic { font: 500 10px var(--bodyfont); color: var(--faint); letter-spacing: 0.04em; white-space: nowrap; max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
+        .xo-section-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        .xo-topic { font: 600 10px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); background: var(--soft); border: 1px solid rgba(var(--accent-rgb), 0.4); padding: 3px 10px; border-radius: 99px; cursor: pointer; }
+        .xo-chip { display: inline-flex; align-items: center; gap: 6px; font: 500 11.5px var(--bodyfont); padding: 3px 10px; border-radius: 99px; }
+        .xo-chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+        .xo-act { border: none; background: none; color: var(--faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+        .xo-act:hover { color: var(--accent); background: var(--soft); }
+        .xo-act.del:hover { color: #ff6b81; background: rgba(255, 107, 129, 0.12); }
+        .xo-act:focus-visible { outline: 2px solid var(--accent); }
+
+        .xo-editbox textarea { width: 100%; box-sizing: border-box; background: var(--card); border: 1px solid rgba(var(--accent-rgb), 0.45); border-radius: 10px; color: var(--ink); font: 14px/1.5 var(--bodyfont); padding: 8px 10px; outline: none; resize: vertical; min-height: 60px; caret-color: var(--accent); }
+        .xo-editrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+        .xo-editrow button { border-radius: 99px; padding: 6px 14px; font: 500 12px var(--bodyfont); cursor: pointer; border: 1px solid var(--dash); background: transparent; color: var(--faint); transition: all .2s; }
+        .xo-editrow button:hover:not(:disabled) { color: var(--ink); border-color: var(--faint); }
+        .xo-editrow button.save { background: var(--accent); color: var(--btn-text); border-color: var(--accent); font-weight: 600; }
+        .xo-editrow button.save:hover:not(:disabled) { box-shadow: 0 4px 18px rgba(var(--accent-rgb), 0.3); color: var(--btn-text); }
+        .xo-editrow button:disabled { opacity: 0.5; cursor: default; }
+
+        .xo-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted rgba(var(--accent-rgb), 0.6); word-break: break-all; }
+        .xo-link:hover { border-bottom-style: solid; }
+
+        .xo-photo { display: block; max-height: 180px; max-width: 100%; border-radius: 12px; border: 1px solid var(--dash); cursor: zoom-in; margin: 2px 0; }
+        .xo-photo-big { max-height: none; width: 100%; cursor: zoom-out; }
+        .xo-imgloading, .xo-imgfail { color: var(--faint); font-size: 13px; font-style: italic; }
+
+        .xo-qa .xo-q { font-weight: 600; color: var(--strong); margin: 0 0 6px; }
+        .xo-qa .xo-a, .xo-recap { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(var(--accent-rgb), 0.07); border: 1px solid rgba(var(--accent-rgb), 0.25); white-space: pre-wrap; }
+        .xo-aibadge { display: inline-block; font: 600 9.5px var(--bodyfont); letter-spacing: 0.12em; color: var(--btn-text); background: var(--accent); border-radius: 4px; padding: 2px 6px; margin-right: 8px; vertical-align: 1px; }
+
+        /* ---------- trash ---------- */
+        .xo-wallpost { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; transition: border-color .25s; }
+        .xo-wallpost:hover { border-color: var(--dash); }
+        .xo-wallmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        .xo-walldate { color: var(--faint); font-size: 12px; }
+        .xo-wallnote { color: var(--faint); font-size: 12.5px; margin: 2px 0 16px; line-height: 1.6; }
+        .xo-body { margin: 0; font-size: 14px; line-height: 1.6; color: var(--body); min-width: 0; }
+
+        /* ---------- goals ---------- */
+        .xo-goalnew { display: flex; gap: 10px; flex-wrap: wrap; }
+        .xo-goalnew .xo-search { min-width: 200px; background: var(--inputbg); }
+        .xo-goal { background: var(--card); border: 1px solid var(--line); border-left: 3px solid rgba(var(--accent-rgb), 0.55); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; transition: border-color .25s; }
+        .xo-goal:hover { border-color: var(--dash); border-left-color: rgba(var(--accent-rgb), 0.55); }
+        .xo-goal.done { opacity: 0.6; border-left-color: var(--line); }
+        .xo-goaltop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .xo-goaltext { font: 600 14.5px var(--disp); color: var(--strong); }
+        .xo-goalmeta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+        .xo-goalweek { display: inline-flex; gap: 5px; }
+        .xo-goalweek i { width: 13px; height: 13px; border-radius: 4px; display: inline-block; background: var(--inputbg); border: 1px solid var(--line); }
+        .xo-goalweek i.hit { background: var(--accent); border-color: var(--accent); }
+        .xo-goalstats { color: var(--faint); font-size: 12px; }
+        .xo-sugs { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .xo-sug { display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--inputbg); border: 1px dashed var(--dash); border-radius: 12px; padding: 10px 12px; }
+        .xo-sugtext { min-width: 0; }
+        .xo-sugtext b { display: block; color: var(--strong); font-size: 13.5px; font-weight: 600; }
+        .xo-sugtext span { color: var(--faint); font-size: 12.5px; }
+
+        /* ---------- misc ---------- */
+        .xo-empty { padding: 40px 16px; text-align: center; color: var(--faint); font-size: 13px; line-height: 1.7; }
+        .xo-empty strong { font-family: var(--disp); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--strong); display: block; margin-bottom: 8px; }
+
+        .xo-footer { margin-top: 30px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .xo-reset { border: 1px solid var(--line); background: transparent; color: var(--faint); font: 500 12.5px var(--bodyfont); padding: 8px 14px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-reset:hover { color: #ff6b81; border-color: rgba(255, 107, 129, 0.4); }
+        .xo-spin { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, 0.3); border-top-color: var(--btn-text); animation: xospin .7s linear infinite; margin-right: 7px; vertical-align: -2px; }
+        .xo-ask .xo-spin { border-color: rgba(var(--strong-rgb), 0.3); border-top-color: var(--strong); }
+        @keyframes xospin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .xo-spin { animation: none; } }
+
+        /* ================= THEME STYLE PACKS — fonts + layout follow the chosen theme ================= */
+        /* clean (default / custom colors): base --disp Space Grotesk + --bodyfont Inter, unchanged */
+
+        /* serif — Trilogy: editorial, elegant */
+        .xo-root.sk-serif { --disp: 'Playfair Display', Georgia, serif; }
+        .sk-serif .xo-title { letter-spacing: 0; font-weight: 700; }
+        .sk-serif .xo-panel, .sk-serif .xo-composer, .sk-serif .xo-daycard, .sk-serif .xo-kpi, .sk-serif .xo-goal { border-radius: 22px; }
+        .sk-serif .xo-dayhead h2 { font-style: italic; }
+
+        /* bold — BBTM Gold: concert-poster condensed */
+        .xo-root.sk-bold { --disp: 'Bebas Neue', 'Oswald', sans-serif; }
+        .sk-bold .xo-title { letter-spacing: 0.06em; font-weight: 400; font-size: 24px; }
+        .sk-bold .xo-kpi .val { letter-spacing: 0.02em; }
+        .sk-bold .xo-kpi.hero .val { font-size: 52px; }
+        .sk-bold .xo-panel h3, .sk-bold .xo-dayhead h2, .sk-bold .xo-subhead { letter-spacing: 0.05em; font-weight: 400; }
+
+        /* chrome — Starboy: futuristic */
+        .xo-root.sk-chrome { --disp: 'Audiowide', 'Space Grotesk', sans-serif; }
+        .sk-chrome .xo-title { letter-spacing: 0.02em; font-weight: 400; font-size: 17px; }
+        .sk-chrome .xo-kpi .val { font-size: 24px; }
+        .sk-chrome .xo-kpi.hero .val { font-size: 34px; }
+        .sk-chrome .xo-panel h3 { letter-spacing: 0.04em; }
+
+        /* soft — Melancholy: quiet serif display */
+        .xo-root.sk-soft { --disp: 'Cormorant Garamond', Georgia, serif; }
+        .sk-soft .xo-title { letter-spacing: 0; font-weight: 700; font-size: 23px; }
+        .sk-soft .xo-kpi .val { font-size: 32px; font-weight: 700; }
+        .sk-soft .xo-kpi.hero .val { font-size: 48px; }
+        .sk-soft .xo-panel h3, .sk-soft .xo-dayhead h2 { font-weight: 600; font-size: 18px; letter-spacing: 0; }
+
+        /* cine — After Hours: cinematic uppercase */
+        .xo-root.sk-cine { --disp: 'Oswald', sans-serif; }
+        .sk-cine .xo-title { text-transform: uppercase; letter-spacing: 0.12em; font-weight: 500; }
+        .sk-cine .xo-tab { text-transform: uppercase; letter-spacing: 0.08em; }
+        .sk-cine .xo-panel h3, .sk-cine .xo-dayhead h2, .sk-cine .xo-subhead { text-transform: uppercase; letter-spacing: 0.09em; font-weight: 500; }
+
+        /* retro — Dawn FM: rounded broadcast */
+        .xo-root.sk-retro { --disp: 'Righteous', 'Space Grotesk', sans-serif; }
+        .sk-retro .xo-title { letter-spacing: 0.01em; font-weight: 400; }
+        .sk-retro .xo-panel, .sk-retro .xo-composer, .sk-retro .xo-daycard, .sk-retro .xo-kpi, .sk-retro .xo-goal { border-radius: 22px; }
+        .sk-retro .xo-panel h3, .sk-retro .xo-dayhead h2 { font-weight: 400; }
+
+        /* ritual — Alter: engraved, ceremonial (the blood-altar look) */
+        .xo-root.sk-ritual { --disp: 'Cinzel', Georgia, serif; }
+        .sk-ritual .xo-topbar, .sk-ritual .xo-top { justify-content: center; }
+        .sk-ritual .xo-title { text-transform: uppercase; letter-spacing: 0.18em; font-weight: 700;
+          text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.55), 0 0 46px rgba(var(--accent-rgb), 0.3); }
+        .sk-ritual .xo-title span { color: var(--accent); }
+        .sk-ritual .xo-panel h3, .sk-ritual .xo-dayhead h2, .sk-ritual .xo-subhead { text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; }
+        .sk-ritual .xo-tab { text-transform: uppercase; letter-spacing: 0.1em; }
+        .sk-ritual .xo-kpi { border-color: rgba(var(--accent-rgb), 0.22); box-shadow: 0 0 30px rgba(var(--accent-rgb), 0.06); }
+        .sk-ritual .xo-kpi.hero .val { text-shadow: 0 0 22px rgba(var(--accent-rgb), 0.5); }
+        .sk-ritual .xo-panel { border-color: rgba(var(--accent-rgb), 0.18); }
+        .sk-ritual .xo-daycard { border-left: 2px solid rgba(var(--accent-rgb), 0.5); }
+        .sk-ritual .xo-add { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.45); }
+
+        @media (max-width: 700px) {
+          .sk-bold .xo-title { font-size: 22px; }
+          .sk-bold .xo-kpi.hero .val, .sk-soft .xo-kpi.hero .val { font-size: 26px; }
+          .sk-ritual .xo-title { letter-spacing: 0.12em; }
+        }
+
+        /* ================= NEON SKIN — Kiss Land's late-night identity ================= */
+        .xo-root.sk-neon {
+          --glow: rgba(var(--accent-rgb), 0.55);
+          position: relative;
+          font-family: 'Karla', system-ui, sans-serif;
+          background:
+            radial-gradient(900px 420px at 50% -10%, rgba(var(--accent-rgb), 0.20) 0%, transparent 62%),
+            radial-gradient(800px 480px at 6% 34%, rgba(var(--strong-rgb), 0.04) 0%, transparent 58%),
+            radial-gradient(760px 520px at 94% 112%, rgba(var(--accent-rgb), 0.10) 0%, transparent 60%),
+            var(--bg);
+        }
+        .xo-root.sk-neon::before {
+          content: ""; position: absolute; inset: 0; pointer-events: none;
+          background: repeating-linear-gradient(
+            115deg,
+            transparent 0px, transparent 46px,
+            rgba(var(--accent-rgb), 0.03) 46px, rgba(var(--accent-rgb), 0.03) 47px,
+            transparent 47px, transparent 96px,
+            rgba(var(--strong-rgb), 0.02) 96px, rgba(var(--strong-rgb), 0.02) 97px
+          );
+        }
+        .xo-root.sk-neon .xo-shell { position: relative; }
+        .xo-root.sk-neon .xo-icon { filter: drop-shadow(0 0 10px var(--glow)); }
+        .xo-eyebrow { font-family: 'Noto Sans JP', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: .5em; color: var(--strong); margin: 0 0 6px; text-shadow: 0 0 10px var(--glow), 0 0 26px var(--glow); }
+        .xo-root.sk-neon .xo-title { font-family: 'Syncopate', sans-serif; font-weight: 700; font-size: clamp(20px, 6vw, 32px); letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 16px var(--glow), 0 0 44px rgba(var(--accent-rgb), 0.28); animation: xoflicker 7s infinite; word-break: break-word; }
+        .xo-root.sk-neon .xo-title span { color: var(--accent); font-weight: 700; }
+        @keyframes xoflicker {
+          0%, 91%, 93.5%, 100% { opacity: 1; }
+          92% { opacity: .72; }
+          93% { opacity: .9; }
+        }
+        @media (prefers-reduced-motion: reduce) { .xo-root.sk-neon .xo-title { animation: none; } }
+        .xo-root.sk-neon .xo-tabs { background: transparent; border: none; padding: 0; gap: 8px; }
+        .xo-root.sk-neon .xo-tab { border: 1px solid var(--line); background: var(--card); color: var(--faint); font: 700 11.5px 'Karla', sans-serif; letter-spacing: .08em; text-transform: uppercase; padding: 8px 14px; }
+        .xo-root.sk-neon .xo-tab.on { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.55); background: var(--soft); text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-gear { border-color: var(--line); background: var(--card); font: 700 11px 'Karla', sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+        .xo-root.sk-neon .xo-gear:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-sub.vibe { font-style: italic; }
+        .xo-root.sk-neon .xo-kpi { border-radius: 14px; box-shadow: 0 0 26px rgba(var(--accent-rgb), 0.08); }
+        .xo-root.sk-neon .xo-kpi .val { font-family: 'Syncopate', sans-serif; font-size: 20px; letter-spacing: 0; }
+        .xo-root.sk-neon .xo-kpi.hero .val { font-size: 28px; text-shadow: 0 0 14px var(--glow); }
+        .xo-root.sk-neon .xo-panel, .xo-root.sk-neon .xo-composer, .xo-root.sk-neon .xo-daycard, .xo-root.sk-neon .xo-goal, .xo-root.sk-neon .xo-wallpost { border-radius: 14px; }
+        .xo-root.sk-neon .xo-panel { border-color: rgba(var(--accent-rgb), 0.35); box-shadow: 0 0 26px rgba(var(--accent-rgb), 0.1); }
+        .xo-root.sk-neon .xo-panel h3, .xo-root.sk-neon .xo-subhead { font-family: 'Syncopate', sans-serif; font-weight: 400; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+        .xo-root.sk-neon .xo-composer { background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.05), rgba(var(--strong-rgb), 0.02)), var(--card); box-shadow: 0 12px 34px rgba(0,0,0,0.35); }
+        .xo-root.sk-neon .xo-composer:focus-within { border-color: rgba(var(--accent-rgb), 0.55); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.25), 0 0 26px rgba(var(--accent-rgb), 0.14); }
+        .xo-root.sk-neon .xo-promptcard { border: 1px dashed rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-promptcard b { text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-daycard { border-left: 2px solid rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-dayhead h2 { font-family: 'Syncopate', sans-serif; font-weight: 400; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; white-space: normal; }
+        .xo-root.sk-neon .xo-topic { text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.55); }
+        .xo-root.sk-neon .xo-emolabel { text-shadow: 0 0 8px currentColor; }
+        .xo-root.sk-neon .xo-chip i { box-shadow: 0 0 6px currentColor; }
+        .xo-root.sk-neon .xo-attach, .xo-root.sk-neon .xo-mic, .xo-root.sk-neon .xo-ask { border-color: rgba(var(--accent-rgb), 0.4); color: var(--accent); font-weight: 700; }
+        .xo-root.sk-neon .xo-attach:hover:not(:disabled), .xo-root.sk-neon .xo-mic:hover:not(:disabled), .xo-root.sk-neon .xo-ask:hover:not(:disabled) { background: var(--soft); color: var(--accent); border-color: rgba(var(--accent-rgb), 0.55); }
+        .xo-root.sk-neon .xo-add { background: linear-gradient(100deg, var(--accent), var(--accent-dark)); border: none; font: 700 12.5px 'Karla', sans-serif; letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.4); }
+        .xo-root.sk-neon .xo-add:hover:not(:disabled) { filter: brightness(1.12); box-shadow: 0 0 28px rgba(var(--accent-rgb), 0.6); }
+        .xo-root.sk-neon .xo-mic.live { box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.6); }
+        .xo-root.sk-neon .xo-aibadge { box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-goalweek i.hit { box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6); }
+        .xo-root.sk-neon .xo-empty strong { font-family: 'Syncopate', sans-serif; text-transform: uppercase; letter-spacing: .14em; font-size: 13px; text-shadow: 0 0 14px var(--glow); }
+        .xo-root.sk-neon .xo-empty .jp { font-family: 'Noto Sans JP', sans-serif; color: var(--strong); display: block; margin-top: 14px; letter-spacing: .3em; font-size: 12px; text-shadow: 0 0 10px var(--glow); }
+
+        /* ================= PHONE OPTIMIZATION (any skin) ================= */
+        @media (max-width: 700px) {
+          .xo-root { padding: 16px 12px 88px; }
+
+          /* header: brand + gear on top row, tabs as a swipeable segmented strip below */
+          .xo-top { gap: 10px; margin-bottom: 10px; }
+          .xo-brand { gap: 10px; }
+          .xo-title { font-size: 18px; }
+          .xo-tabs { order: 3; width: 100%; gap: 4px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; justify-content: flex-start; }
+          .xo-tabs::-webkit-scrollbar { display: none; }
+          .xo-tab { flex: 0 0 auto; padding: 8px 15px; font-size: 13px; }
+          .xo-gear { padding: 7px 14px; font-size: 12px; }
+          .xo-sub { margin: 4px 0 12px; }
+
+          /* 16px inputs stop iOS from zooming on focus */
+          .xo-composer textarea, .xo-search, .xo-panel input[type="text"], .xo-editbox textarea, .xo-chatrow input, .xo-goalnew input { font-size: 16px; }
+
+          /* balanced 2×2 KPI grid — no orphaned card */
+          .xo-kpis { grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+          .xo-kpi { padding: 13px 15px; border-radius: 16px; }
+          .xo-kpi.hero { grid-column: span 1; }
+          .xo-kpi h4 { margin-bottom: 5px; font-size: 9px; }
+          .xo-kpi .val { font-size: 22px; }
+          .xo-kpi.hero .val { font-size: 24px; }
+          .xo-kpi .val.mood { font-size: 17px; }
+
+          .xo-panel { padding: 15px; border-radius: 16px; }
+          .xo-composer { padding: 13px; border-radius: 16px; }
+          .xo-composer textarea { min-height: 78px; }
+          .xo-hint { display: none; }
+          .xo-composer-row { margin-top: 8px; }
+          .xo-btns { width: 100%; justify-content: space-between; gap: 6px; }
+          .xo-attach, .xo-mic, .xo-ask, .xo-add { padding: 10px 12px; }
+
+          .xo-searchrow { margin-bottom: 8px; }
+          .xo-topicchips { gap: 6px; margin-bottom: 10px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+          .xo-topicchips::-webkit-scrollbar { display: none; }
+          .xo-topicchip { flex: 0 0 auto; }
+
+          .xo-dayhead { padding: 12px 14px; gap: 8px; }
+          .xo-daybody { padding: 0 10px 10px; }
+          .xo-section { padding: 11px 12px; }
+          .xo-seg { grid-template-columns: 1fr 56px; gap: 8px; }
+          .xo-emolabel { font-size: 8.5px; letter-spacing: 0.05em; }
+          .xo-sidetopic { max-width: 56px; }
+          .xo-segacts { opacity: 1; gap: 0; }
+          .xo-act { padding: 3px; font-size: 15px; }
+
+          .xo-daycard, .xo-goal { border-radius: 16px; }
+
+          /* touch devices: kill sticky hover-lift so nothing stays raised after a tap */
+          .xo-kpi:hover, .xo-panel:hover, .xo-daycard:hover, .xo-goal:hover, .xo-wallpost:hover { transform: none; }
+          .xo-gear:hover, .xo-panel-btn:hover, .xo-preset:hover, .xo-add:hover, .xo-attach:hover, .xo-mic:hover, .xo-ask:hover { transform: none; }
+        }
+
+        /* ================= SIDEBAR STATS ================= */
+        .xo-weekbars { display: flex; gap: 6px; height: 92px; }
+        .xo-weekbars .wb { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .xo-weekbars .wbtrack { flex: 1; display: flex; align-items: flex-end; background: var(--inputbg); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+        .xo-weekbars .wbfill { width: 100%; border-radius: 5px; background: linear-gradient(180deg, var(--accent), rgba(var(--accent-rgb), 0.45)); min-height: 3px; }
+        .xo-weekbars .wb span { font-size: 9px; color: var(--faint); text-transform: uppercase; text-align: center; }
+        .xo-statrow { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+        .xo-statrow:last-child { margin-bottom: 0; }
+        .xo-statrow .name { font-size: 12px; color: var(--body); width: 82px; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-statrow .bar { flex: 1; height: 6px; border-radius: 99px; background: var(--inputbg); overflow: hidden; display: block; }
+        .xo-statrow .fill { display: block; height: 100%; border-radius: 99px; }
+        .xo-statrow .n { font-size: 11px; color: var(--faint); width: 26px; text-align: right; flex: none; }
+        .xo-statrow.click { cursor: pointer; }
+        .xo-statrow.click:hover .name { color: var(--accent); }
+
+        /* ---------- rewind / photos / chat / pixels ---------- */
+        .xo-rewindtext { font-size: 13.5px; color: var(--body); line-height: 1.65; white-space: pre-wrap; }
+        .xo-photostrip { display: flex; gap: 6px; flex-wrap: wrap; }
+        .xo-photostrip .xo-photo { height: 62px; width: 62px; object-fit: cover; margin: 0; }
+        .xo-photostrip .xo-photo-big { height: auto; width: 100%; }
+
+        /* ---------- Photos tab: gallery + lightbox ---------- */
+        .xo-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+        .xo-galtile { aspect-ratio: 1; width: 100%; height: 100%; object-fit: cover; border-radius: 14px; border: 1px solid var(--line); background: var(--inputbg); cursor: zoom-in; display: block; transition: transform .18s, border-color .18s; }
+        img.xo-galtile:hover { transform: translateY(-2px); border-color: rgba(var(--accent-rgb), 0.5); }
+        .xo-galtile.loading { animation: xoshimmerbg 1.4s ease-in-out infinite; }
+        .xo-galtile.fail { cursor: default; }
+        @keyframes xoshimmerbg { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.85; } }
+        @media (prefers-reduced-motion: reduce) { .xo-galtile.loading { animation: none; } }
+        .xo-lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(3, 4, 6, 0.92); backdrop-filter: blur(6px); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; cursor: zoom-out; animation: xofade .18s ease both; }
+        @keyframes xofade { from { opacity: 0; } to { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .xo-lightbox { animation: none; } }
+        .xo-lightimg { max-width: min(920px, 94vw); max-height: 82vh; border-radius: 14px; border: 1px solid rgba(var(--accent-rgb), 0.35); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); cursor: default; object-fit: contain; }
+        .xo-lightcap { margin-top: 14px; color: var(--body); font-size: 13.5px; letter-spacing: 0.02em; }
+        .xo-lightclose { position: fixed; top: 16px; right: 18px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .xo-lightclose:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); }
+        .xo-chat { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 55vh; overflow-y: auto; scrollbar-width: thin; }
+        .xo-msg { padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+        .xo-msg.u { align-self: flex-end; background: var(--soft); border: 1px solid rgba(var(--accent-rgb), 0.35); max-width: 85%; color: var(--ink); }
+        .xo-msg.a { align-self: flex-start; background: var(--inputbg); border: 1px solid var(--line); max-width: 92%; color: var(--body); }
+        .xo-chatrow { display: flex; gap: 8px; }
+        .xo-yearpixels { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 10px); grid-auto-columns: 10px; gap: 3px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+        .xo-yearpixels i { width: 10px; height: 10px; border-radius: 3px; background: var(--inputbg); border: 1px solid var(--line); box-sizing: border-box; display: block; }
+        .xo-yearpixels i.future { opacity: 0.3; }
+        .xo-yearpixels i.pad { visibility: hidden; }
+        .xo-promptcard { position: relative; padding-right: 44px; }
+        .xo-shuffle { position: absolute; top: 10px; right: 10px; border: 1px solid var(--line); background: transparent; color: var(--faint); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: 13px; line-height: 1; transition: all .2s; }
+        .xo-shuffle:hover:not(:disabled) { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); transform: rotate(180deg); }
+        .xo-shuffle:disabled { opacity: 0.4; cursor: default; }
+        .xo-act.star.on { color: var(--accent); }
+
+        /* ---------- album preset chips ---------- */
+        .xo-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+        .xo-preset { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 99px; padding: 8px 14px; cursor: pointer; font: 500 12.5px var(--bodyfont); transition: transform .2s, box-shadow .2s; }
+        .xo-preset:hover { transform: translateY(-1px); }
+        .xo-preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .xo-preset i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+        .xo-preset span { white-space: nowrap; }
+
+        /* ================= ALBUM MOTIFS — ambient set dressing per accent theme ================= */
+        .xo-fx { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+        .xo-fx i { position: absolute; display: block; }
+        @keyframes fxballoon { 0%, 100% { transform: translate(0, 0); } 33% { transform: translate(-12px, -24px); } 66% { transform: translate(9px, -10px); } }
+        @keyframes fxbreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes fxshimmer { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+        @keyframes fxcross {
+          0%, 100% { opacity: 0.15; filter: drop-shadow(0 0 30px rgba(var(--accent-rgb), 0.9)); }
+          50% { opacity: 0.05; filter: drop-shadow(0 0 8px rgba(var(--accent-rgb), 0.35)); }
+        }
+        @keyframes fxneon {
+          0%, 5%, 7%, 40%, 43%, 100% { opacity: 1; }
+          6% { opacity: 0.35; }
+          41% { opacity: 0.5; }
+          42% { opacity: 0.85; }
+        }
+        @keyframes fxsweep {
+          0% { transform: rotate(-24deg) translateX(70px); opacity: 0; }
+          18% { opacity: 1; }
+          62% { opacity: 1; }
+          100% { transform: rotate(-24deg) translateX(-150px); opacity: 0; }
+        }
+        @keyframes fxdrift { 0% { background-position: 0 0; } 100% { background-position: 47.7px 0; } }
+        @keyframes fxleak {
+          0%, 100% { opacity: 0.5; transform: rotate(-8deg) translateX(0); }
+          50% { opacity: 1; transform: rotate(-8deg) translateX(44px); }
+        }
+        @keyframes fxwave { 0%, 100% { transform: scale(1); opacity: 0.75; } 50% { transform: scale(1.06); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .xo-fx i { animation: none !important; } }
+
+        /* Trilogy — smoke and drifting balloons */
+        .m-trilogy .fx1 { top: -120px; right: -80px; width: 420px; height: 420px; border-radius: 50%;
+          background: radial-gradient(circle at 35% 35%, rgba(var(--strong-rgb), 0.14), rgba(var(--strong-rgb), 0.02) 60%, transparent 70%);
+          filter: blur(2px); animation: fxballoon 16s ease-in-out infinite; }
+        .m-trilogy .fx2 { top: 110px; right: 190px; width: 190px; height: 190px; border-radius: 50%;
+          background: radial-gradient(circle at 35% 35%, rgba(var(--strong-rgb), 0.09), transparent 65%);
+          animation: fxballoon 22s ease-in-out 2s infinite; }
+        .m-trilogy .fx3 { bottom: -160px; left: -120px; width: 560px; height: 380px;
+          background: radial-gradient(ellipse, rgba(var(--strong-rgb), 0.05), transparent 70%); filter: blur(10px);
+          animation: fxbreathe 12s ease-in-out infinite; }
+
+        /* Kiss Land — neon signage and light poles */
+        .m-kissland .fx1::before { content: "キス・ランド"; }
+        .m-kissland .fx1 { top: 110px; right: 34px; writing-mode: vertical-rl; font-family: 'Noto Sans JP', sans-serif;
+          font-weight: 700; font-size: 42px; letter-spacing: 0.35em; color: rgba(var(--accent-rgb), 0.10);
+          text-shadow: 0 0 24px rgba(var(--accent-rgb), 0.20);
+          animation: fxneon 9s linear infinite; }
+        .m-kissland .fx2 { top: 0; left: 7%; width: 1px; height: 42vh;
+          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.35), transparent);
+          box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.3);
+          animation: fxshimmer 4s ease-in-out infinite; }
+        .m-kissland .fx3 { top: 0; left: 11%; width: 1px; height: 26vh;
+          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.22), transparent);
+          animation: fxshimmer 6s ease-in-out 1s infinite; }
+
+        /* BBTM — gold haze and stage-light streaks */
+        .m-madness .fx1 { top: -140px; left: 28%; width: 640px; height: 320px;
+          background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.12), transparent 70%); filter: blur(6px);
+          animation: fxbreathe 10s ease-in-out infinite; }
+        .m-madness .fx2 { bottom: 11%; right: -60px; width: 380px; height: 2px; transform: rotate(-24deg);
+          background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.45));
+          box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.4);
+          animation: fxsweep 11s ease-in-out infinite; }
+        .m-madness .fx3 { bottom: 17%; right: -40px; width: 260px; height: 1px; transform: rotate(-24deg);
+          background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.3));
+          animation: fxsweep 15s ease-in-out 5s infinite; }
+
+        /* Starboy — the glowing cross */
+        .m-starboy .fx1 { top: 90px; right: 7%; width: 150px; height: 230px; opacity: 0.10;
+          background:
+            linear-gradient(var(--accent), var(--accent)) 50% 0 / 26px 100% no-repeat,
+            linear-gradient(var(--accent), var(--accent)) 50% 24% / 100% 26px no-repeat;
+          filter: drop-shadow(0 0 26px rgba(var(--accent-rgb), 0.8));
+          animation: fxcross 5s ease-in-out infinite; }
+        .m-starboy .fx2 { bottom: -120px; left: -100px; width: 520px; height: 340px;
+          background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.10), transparent 70%);
+          animation: fxbreathe 9s ease-in-out infinite; }
+        .m-starboy .fx3 { top: 30%; left: -60px; width: 300px; height: 1px; transform: rotate(18deg);
+          background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.4), transparent);
+          box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.3);
+          animation: fxshimmer 5s ease-in-out infinite; }
+
+        /* Melancholy — rain streaks and cold mist */
+        .m-melancholy .fx1 { inset: -80px 0 0 0;
+          background: repeating-linear-gradient(100deg, transparent 0 46px, rgba(var(--accent-rgb), 0.06) 46px 47px);
+          animation: fxdrift 7s linear infinite; }
+        .m-melancholy .fx2 { bottom: -140px; right: -120px; width: 560px; height: 380px;
+          background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.12), transparent 70%); filter: blur(8px);
+          animation: fxbreathe 11s ease-in-out infinite; }
+        .m-melancholy .fx3 { top: -120px; left: 20%; width: 480px; height: 280px;
+          background: radial-gradient(ellipse, rgba(var(--strong-rgb), 0.05), transparent 70%); }
+
+        /* After Hours — red horizon, light leak, vignette */
+        .m-afterhours .fx1 { left: 0; right: 0; bottom: 0; height: 34vh;
+          background: linear-gradient(0deg, rgba(var(--accent-rgb), 0.16), transparent);
+          animation: fxbreathe 9s ease-in-out infinite; }
+        .m-afterhours .fx2 { top: 18%; left: -80px; width: 420px; height: 3px; transform: rotate(-8deg);
+          background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.5), transparent);
+          box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.45);
+          animation: fxleak 12s ease-in-out infinite; }
+        .m-afterhours .fx3 { inset: 0; box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.55); }
+
+        /* featured shapes need open margins — hide them when the shell fills the window */
+        @media (max-width: 1360px) {
+          .m-starboy .fx1, .m-kissland .fx1, .m-trilogy .fx1, .m-trilogy .fx2 { display: none; }
+        }
+
+        /* Dawn FM — radio waves and first light */
+        .m-dawnfm .fx1 { top: -260px; right: -260px; width: 640px; height: 640px; border-radius: 50%;
+          background: repeating-radial-gradient(circle, transparent 0 34px, rgba(var(--accent-rgb), 0.07) 34px 36px);
+          animation: fxwave 8s ease-in-out infinite; }
+        .m-dawnfm .fx2 { left: 0; right: 0; bottom: 0; height: 30vh;
+          background: linear-gradient(0deg, rgba(var(--accent-rgb), 0.14), transparent);
+          animation: fxbreathe 10s ease-in-out infinite; }
+        .m-dawnfm .fx3 { bottom: 6vh; left: 12%; width: 76%; height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(var(--strong-rgb), 0.25), transparent); }
+
+        /* Alter — blood halo overhead, glowing vein bloom, heavy vignette */
+        .m-alter .fx1 { top: -220px; left: 50%; transform: translateX(-50%); width: 620px; height: 620px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(var(--accent-rgb), 0.55) 0%, rgba(var(--accent-rgb), 0.18) 28%, transparent 60%);
+          filter: blur(6px); animation: fxbreathe 6s ease-in-out infinite; }
+        .m-alter .fx2 { left: 0; right: 0; bottom: -80px; height: 62vh;
+          background:
+            radial-gradient(120% 90% at 50% 120%, rgba(var(--accent-rgb), 0.20), transparent 62%),
+            radial-gradient(60% 70% at 50% 130%, rgba(var(--accent-rgb), 0.30), transparent 60%);
+          animation: fxwave 7s ease-in-out infinite; }
+        .m-alter .fx3 { inset: 0; box-shadow: inset 0 0 220px 40px rgba(0, 0, 0, 0.78), inset 0 -120px 160px -60px rgba(var(--accent-rgb), 0.22); }
+      `}</style>
+
+      <div className="xo-fx" aria-hidden="true"><i className="fx1" /><i className="fx2" /><i className="fx3" /></div>
+      <div className="xo-shell">
+        <div className="xo-top">
+          <div className="xo-brand">
+            <span className="xo-icon"><ThemeIcon theme={settings.theme} /></span>
+            <div>
+              {neon && <p className="xo-eyebrow">キス・ランド</p>}
+              <h1 className="xo-title">{settings.name || "Journal"}</h1>
+            </div>
+          </div>
+          <div className="xo-tabs">
+            <button className={view === "journal" ? "xo-tab on" : "xo-tab"} onClick={() => setView("journal")}>Journal</button>
+            <button className={view === "goals" ? "xo-tab on" : "xo-tab"} onClick={() => setView("goals")}>Growth</button>
+            <button className={view === "photos" ? "xo-tab on" : "xo-tab"} onClick={() => setView("photos")}>
+              Photos{allPhotos.length > 0 ? ` (${allPhotos.length})` : ""}
+            </button>
+            <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => setView("ask")}>Ask</button>
+            <button className={view === "insights" ? "xo-tab on" : "xo-tab"} onClick={() => setView("insights")}>Insights</button>
+            <button className={view === "trash" ? "xo-tab on" : "xo-tab"} onClick={() => setView("trash")}>
+              Deleted{trash.length > 0 ? ` (${trash.length})` : ""}
+            </button>
+          </div>
+          <span className="xo-spacer" />
+          <button className="xo-gear" onClick={() => setShowCustomize(!showCustomize)}>
+            {showCustomize ? "Close" : "Customize"}
+          </button>
+        </div>
+
+        {(settings.customTagline || settings.tagline) && (
+          <p className={settings.customTagline ? "xo-sub" : "xo-sub vibe"}>
+            {settings.customTagline || settings.tagline}
+          </p>
+        )}
+
+        {showCustomize && (
+          <div className="xo-panel">
+            <label htmlFor="xo-name">Journal name</label>
+            <input
+              id="xo-name"
+              type="text"
+              value={settings.name}
+              onChange={(e) => updateSettings({ name: e.target.value })}
+              placeholder="Name your journal"
+            />
+            <label htmlFor="xo-tag" style={{ marginTop: 14 }}>Subtitle (optional — leave blank and the AI writes one from your entries)</label>
+            <input
+              id="xo-tag"
+              type="text"
+              value={settings.customTagline}
+              onChange={(e) => updateSettings({ customTagline: e.target.value })}
+              placeholder="Your own line under the title"
+            />
+            <label style={{ marginTop: 14 }}>Theme presets</label>
+            <div className="xo-presets">
+              {ALBUM_PRESETS.map((p) => {
+                const t = THEMES[p.theme];
+                const b = BACKGROUNDS[p.bg];
+                const on = settings.theme === p.theme && settings.bg === p.bg;
+                return (
+                  <button
+                    key={p.id}
+                    className={on ? "xo-preset on" : "xo-preset"}
+                    style={{
+                      background: b.bg,
+                      borderColor: on ? t.accent : b.line,
+                      boxShadow: on ? "0 0 12px " + t.accent + "55" : undefined,
+                    }}
+                    title={t.label + " on " + b.label}
+                    onClick={() => updateSettings({ theme: p.theme, bg: p.bg })}
+                  >
+                    <i style={{ background: t.accent, boxShadow: "0 0 8px " + t.accent }} />
+                    <span style={{ color: b.ink }}>{p.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="xo-note" style={{ marginTop: 8 }}>One tap sets the accent, backdrop, fonts and moving scene together. Mixing your own colors below keeps the clean font.</p>
+            <label style={{ marginTop: 14 }}>Accent color</label>
+            <div className="xo-swatches">
+              {Object.entries(THEMES).map(([key, t]) => (
+                <button
+                  key={key}
+                  className={settings.theme === key ? "xo-swatch sel" : "xo-swatch"}
+                  style={{ background: t.accent, color: t.accent }}
+                  title={t.label}
+                  aria-label={"Accent: " + t.label}
+                  onClick={() => updateSettings({ theme: key })}
+                />
+              ))}
+            </div>
+            <label style={{ marginTop: 14 }}>Background</label>
+            <div className="xo-swatches">
+              {Object.entries(BACKGROUNDS).map(([key, b]) => (
+                <button
+                  key={key}
+                  className={settings.bg === key ? "xo-swatch sel" : "xo-swatch"}
+                  style={{ background: b.bg, color: b.bg, border: "2px solid " + b.line }}
+                  title={b.label}
+                  aria-label={"Background: " + b.label}
+                  onClick={() => updateSettings({ bg: key })}
+                />
+              ))}
+            </div>
+            <label style={{ marginTop: 14 }}>Privacy lock (this device)</label>
+            <div className="xo-panel-row" style={{ marginTop: 4 }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                className="xo-search"
+                style={{ maxWidth: 180, flex: "none" }}
+                value={pinField}
+                onChange={(e) => setPinField(e.target.value.replace(/\D/g, ""))}
+                placeholder={hasPin ? "Current PIN" : "Choose a PIN (4+ digits)"}
+              />
+              {!hasPin ? (
+                <button className="xo-panel-btn" onClick={setPin} disabled={pinField.length < 4}>Set PIN</button>
+              ) : (
+                <>
+                  <button className="xo-panel-btn" onClick={removePin} disabled={pinField.length < 4}>Remove lock</button>
+                  <button className="xo-panel-btn" onClick={() => setLocked(true)}>Lock now</button>
+                </>
+              )}
+            </div>
+            <p className="xo-note" style={{ marginTop: 6 }}>Asks for the PIN whenever the journal opens on this device.</p>
+            <div className="xo-panel-row">
+              <button className="xo-panel-btn" onClick={exportJournal} disabled={!hasEntries}>
+                Export journal (.txt)
+              </button>
+              <button className="xo-panel-btn" onClick={backupAll} disabled={backupBusy || !hasEntries}>
+                {backupBusy ? "Backing up…" : "Backup (.json)"}
+              </button>
+              <input ref={importFileRef} type="file" accept="application/json,.json" style={{ display: "none" }}
+                onChange={(e) => { importBackup(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+              <button className="xo-panel-btn" onClick={() => importFileRef.current && importFileRef.current.click()} disabled={importBusy}>
+                {importBusy ? "Importing…" : "Import backup (.json)"}
+              </button>
+              <button className="xo-panel-btn" onClick={() => window.__signOut && window.__signOut()}>
+                Sign out
+              </button>
+              <button className="xo-panel-done" style={{ margin: 0 }} onClick={() => setShowCustomize(false)}>Done</button>
+            </div>
+            {importMsg && <div style={{ marginTop: 10, fontSize: 14, color: importMsg.startsWith("Imported") ? "var(--accent)" : "#FF8B96" }}>{importMsg}</div>}
+          </div>
+        )}
+
+        {view === "insights" && (
+          <>
+            <div className="xo-kpis">
+              <div className="xo-kpi hero"><h4>Day streak</h4><div className="val">{streak}<span className="unit"> day{streak === 1 ? "" : "s"}</span></div></div>
+              <div className="xo-kpi"><h4>Days journaled</h4><div className="val">{dayKeys.length}</div></div>
+              <div className="xo-kpi"><h4>Notes</h4><div className="val">{totalNotes}</div></div>
+              <div className="xo-kpi"><h4>Top mood — 7d</h4><div className="val mood" style={weekMood ? { color: weekMood.dot } : undefined}>{weekMood ? weekMood.label : "—"}</div></div>
+            </div>
+            <div className="xo-grid2">
+              <div>
+              <div className="xo-panel">
+                <h3>Vibe recap</h3>
+                <p className="xo-note" style={{ marginBottom: 14 }}>The AI reads your last week of entries and writes you an honest note back about what you focused on and how your moods moved.</p>
+                <div className="xo-panel-row" style={{ marginTop: 0 }}>
+                  <button className="xo-panel-btn" onClick={genRecap} disabled={recapBusy || !hasEntries}>
+                    {recapBusy ? "Reading your week…" : "Generate recap of my week"}
+                  </button>
+                  {recap && (
+                    <button className="xo-panel-btn" onClick={saveRecap}>Save to journal</button>
+                  )}
+                </div>
+                {recap && <div className="xo-recapbox">{recap}</div>}
+              </div>
+              <div className="xo-panel">
+                <h3>Mood trend — last 30 days</h3>
+                <MoodTrend days={days} />
+              </div>
+              <div className="xo-panel">
+                <h3>Year in pixels — {new Date().getFullYear()}</h3>
+                <YearPixels domEmotions={domEmotions} />
+                <p className="xo-note" style={{ marginTop: 8 }}>One square per day, colored by that day's dominant mood.</p>
+              </div>
+              </div>
+              <div className="xo-side">
+                <div className="xo-panel">
+                  <h3>Mood — last 5 weeks</h3>
+                  <div className="xo-minical">
+                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => <div className="mh" key={h}>{h}</div>)}
+                    {Array.from({ length: calPadStart }).map((_, i) => <div className="xo-mc dim" key={"pad" + i} />)}
+                    {calCells.map((c) => {
+                      const e = c.emotion ? emotionOf(c.emotion) : null;
+                      return (
+                        <div
+                          key={c.key}
+                          className="xo-mc"
+                          title={prettyDate(c.key, true) + (c.emotion ? " — " + emotionOf(c.emotion).label : "")}
+                          style={e ? { background: e.bg, borderColor: e.dot } : undefined}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="xo-callegend">
+                    {Object.entries(EMOTIONS).slice(0, 6).map(([k, e]) => (
+                      <span key={k}><i style={{ background: e.dot }} />{e.label}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {view === "photos" && (
+          <>
+            {allPhotos.length === 0 ? (
+              <div className="xo-empty">
+                <strong>No photos yet.</strong>
+                Attach a photo to any journal entry — with the + Photo button or by pasting — and every picture you add will collect here.
+              </div>
+            ) : (
+              <>
+                <p className="xo-wallnote">{allPhotos.length} photo{allPhotos.length === 1 ? "" : "s"}, newest first. Tap any to view it full-size.</p>
+                <div className="xo-gallery">
+                  {allPhotos.map((p) => (
+                    <Thumb key={p.imgKey} imgKey={p.imgKey} onOpen={() => setLightbox(p)} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {view === "ask" && (
+          <div className="xo-panel" style={{ maxWidth: 760 }}>
+            <h3>Talk to your journal</h3>
+            <p className="xo-note" style={{ marginBottom: 12 }}>
+              Ask about anything you've written — moods, people, decisions, patterns. The AI answers from your own entries. Conversations aren't saved.
+            </p>
+            <div className="xo-chat">
+              {askMsgs.length === 0 && !askBusy && (
+                <div className="xo-empty" style={{ padding: "24px 8px" }}>
+                  Try: "What was on my mind last week?" · "When did I last write about work?" · "What usually makes me anxious?"
+                </div>
+              )}
+              {askMsgs.map((m, i) => (
+                <div key={i} className={m.role === "u" ? "xo-msg u" : "xo-msg a"}>
+                  {m.role === "a" && <span className="xo-aibadge">AI</span>}
+                  <Linkify text={m.text} />
+                </div>
+              ))}
+              {askBusy && (
+                <div className="xo-msg a"><span className="xo-aibadge">AI</span><span style={{ opacity: 0.6, fontStyle: "italic" }}>reading back through your entries…</span></div>
+              )}
+            </div>
+            <div className="xo-chatrow">
+              <input
+                className="xo-search"
+                type="text"
+                value={askInput}
+                onChange={(e) => setAskInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") askJournal(); }}
+                placeholder="Ask your journal anything…"
+                disabled={askBusy}
+              />
+              <button className="xo-add" onClick={askJournal} disabled={askBusy || !askInput.trim()}>Ask</button>
+            </div>
+          </div>
+        )}
+
+        {view === "journal" && (
+          <>
+            {hasEntries && (
+              <div className="xo-kpis">
+                <div className="xo-kpi hero"><h4>Day streak</h4><div className="val">{streak}<span className="unit"> day{streak === 1 ? "" : "s"}</span></div></div>
+                <div className="xo-kpi"><h4>Days journaled</h4><div className="val">{dayKeys.length}</div></div>
+                <div className="xo-kpi"><h4>Notes</h4><div className="val">{totalNotes}</div></div>
+                <div className="xo-kpi"><h4>Top mood — 7d</h4><div className="val mood" style={weekMood ? { color: weekMood.dot } : undefined}>{weekMood ? weekMood.label : "—"}</div></div>
+              </div>
+            )}
+            <div className="xo-grid2">
+            <div>
+            {showPromptCard && (
+              <div className="xo-promptcard">
+                <b>{hasEntries ? "Been thinking about your last entries…" : "Tonight's prompt"}</b>
+                <button className="xo-shuffle" title="Show me something else" aria-label="New prompt" onClick={genWelcome} disabled={welcomeBusy}>↻</button>
+                {welcomeBusy ? <span style={{ opacity: 0.6, fontStyle: "italic" }}>reading back through what you wrote…</span> : welcome}
+              </div>
+            )}
+
+            <div className="xo-composer">
+              <textarea
+                ref={textareaRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onPaste={onPaste}
+                placeholder={"What's on your mind tonight? Write, talk, paste links or photos.\n\nStart with @ai to ask the AI a question. Cmd/Ctrl + Enter to send."}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+                }}
+                disabled={busy}
+              />
+
+              {pendingImgs.length > 0 && (
+                <div className="xo-pending">
+                  {pendingImgs.map((p) => (
+                    <div className="xo-thumb" key={p.id}>
+                      <img src={p.dataUrl} alt="Pending attachment" />
+                      <button onClick={() => removePending(p.id)} aria-label="Remove photo">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="xo-composer-row">
+                <span className="xo-hint">Saves automatically — your entries are private to you.</span>
+                <div className="xo-btns">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => { takeFiles(e.target.files); e.target.value = ""; }}
+                  />
+                  <button className="xo-attach" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy} title="Add photos">
+                    + Photo
+                  </button>
+                  <button
+                    className={listening ? "xo-mic live" : "xo-mic"}
+                    onClick={toggleMic}
+                    disabled={busy}
+                    title={listening ? "Stop listening" : "Speak your entry"}
+                  >
+                    {listening ? "● Listening" : "🎤 Talk"}
+                  </button>
+                  <button className="xo-ask" onClick={askAI} disabled={busy || !draft.trim()}>
+                    {busy && busyMode === "ask" ? (<><span className="xo-spin" />Thinking…</>) : "Ask AI"}
+                  </button>
+                  <button className="xo-add" onClick={addEntry} disabled={busy || (!draft.trim() && !pendingImgs.length)}>
+                    {busy && busyMode === "entry" ? (<><span className="xo-spin" />Sorting…</>) : "Add entry"}
+                  </button>
+                </div>
+              </div>
+              {error && <div className="xo-error">{error}</div>}
+            </div>
+
+            {hasEntries && (
+              <>
+                <div className="xo-searchrow">
+                  <input
+                    className="xo-search"
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search your journal…"
+                  />
+                </div>
+                {(topTopics.length > 1 || anyFav) && (
+                  <div className="xo-topicchips">
+                    {anyFav && (
+                      <button className={favFilter ? "xo-topicchip on" : "xo-topicchip"} onClick={() => setFavFilter(!favFilter)}>
+                        ★ Favorites
+                      </button>
+                    )}
+                    {topTopics.map((t) => (
+                      <button
+                        key={t}
+                        className={topicFilter.toLowerCase() === t.toLowerCase() ? "xo-topicchip on" : "xo-topicchip"}
+                        onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                    {(topicFilter || query || favFilter) && (
+                      <button className="xo-topicchip" onClick={() => { setTopicFilter(""); setQuery(""); setFavFilter(false); }}>
+                        ✕ clear
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {!loaded && <div className="xo-empty">Opening your journal…</div>}
+
+            {loaded && !hasEntries && (
+              <div className="xo-empty">
+                <strong>{neon ? "The city is quiet. The page is empty." : "A clean page."}</strong>
+                Write your first entry above — or paste a photo or link straight into the box.
+                Start a line with @ai to get an answer saved into your journal.
+                {neon && <span className="jp">今夜、何を考えていますか</span>}
+              </div>
+            )}
+
+            {loaded && hasEntries && filteredDays.length === 0 && (
+              <div className="xo-empty">Nothing matches that search.</div>
+            )}
+
+            {loaded && filteredDays.map(({ key: k, entries }, di) => {
+              const noteCount = entries.reduce((n, en) => n + en.segments.length, 0);
+              const filtering = !!(q || topicFilter || favFilter);
+              const open = filtering || (dayCollapsed[k] !== undefined ? !dayCollapsed[k] : di === 0);
+              const dayTally = {};
+              entries.forEach((en) => (en.segments || []).forEach((s) => { const mm = (s.emotion || "neutral").toLowerCase(); dayTally[mm] = (dayTally[mm] || 0) + 1; }));
+              const domTop = Object.entries(dayTally).sort((a, b) => b[1] - a[1])[0];
+              const de = domTop ? emotionOf(domTop[0]) : null;
+              return (
+              <section className={open ? "xo-daycard open" : "xo-daycard"} key={k}>
+                <div className="xo-dayhead" onClick={() => setDayCollapsed((prev) => ({ ...prev, [k]: open }))}>
+                  <span className="xo-chev">▶</span>
+                  <h2>{prettyDate(k)}</h2>
+                  {de && (
+                    <span className="xo-chip" style={{ background: de.bg, color: de.text }}>
+                      <i style={{ color: de.dot, background: de.dot }} />{de.label}
+                    </span>
+                  )}
+                  <span className="xo-spacer" />
+                  <span className="xo-daycount">{entries.length} entr{entries.length === 1 ? "y" : "ies"} · {noteCount} note{noteCount === 1 ? "" : "s"}</span>
+                </div>
+                {open && <div className="xo-daybody">
+                {entries.map((entry) => {
+                  const entryTopics = [...new Set(entry.segments.map((s) => s.topic).filter(Boolean))];
+                  return (
+                    <div className="xo-section" key={entry.id}>
+                      <div className="xo-section-head">
+                        {entryTopics.map((t) => (
+                          <span
+                            key={t}
+                            className="xo-topic"
+                            title="Filter by this topic"
+                            onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
+                          >
+                            {t}
+                          </span>
+                        ))}
+                        <span className="xo-entrytime">{entry.time}</span>
+                      </div>
+                      <div className="xo-flow">
+                      {entry.segments.map((seg) => {
+                        const e = emotionOf(seg.emotion);
+                        const editing = editingId === seg.id;
+                        return (
+                          <div className="xo-seg" key={seg.id}>
+                            <div className="xo-segmain">
+                              {editing ? (
+                                <div className="xo-editbox">
+                                  <textarea value={editText} onChange={(ev) => setEditText(ev.target.value)} />
+                                  <div className="xo-editrow">
+                                    <button className="save" onClick={() => saveEdit(k, entry.id)}>Save</button>
+                                    <button onClick={() => { setEditingId(null); setEditText(""); }}>Cancel</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  {(!seg.type || seg.type === "text") && (
+                                    <span
+                                      className="xo-hl"
+                                      style={{ background: e.bg, boxShadow: `inset 0 -2px 0 ${e.dot}88` }}
+                                    >
+                                      <Linkify text={seg.text} />
+                                    </span>
+                                  )}
+                                  {seg.type === "image" && <StoredImage imgKey={seg.imgKey} />}
+                                  {seg.type === "qa" && (
+                                    <div className="xo-qa">
+                                      <p className="xo-q">{seg.q}</p>
+                                      <p className="xo-a"><span className="xo-aibadge">AI</span><Linkify text={seg.a} /></p>
+                                    </div>
+                                  )}
+                                  {seg.type === "recap" && (
+                                    <p className="xo-recap"><span className="xo-aibadge">RECAP</span>{seg.text}</p>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            <div className="xo-segside">
+                              <span className="xo-emolabel" style={{ color: e.dot }}>{e.label}</span>
+                              {entryTopics.length > 1 && seg.topic && (
+                                <span className="xo-sidetopic">{seg.topic}</span>
+                              )}
+                              {!editing && (
+                                <span className="xo-segacts">
+                                  <button
+                                    className={seg.fav ? "xo-act star on" : "xo-act star"}
+                                    title={seg.fav ? "Unfavorite" : "Favorite"}
+                                    aria-label={seg.fav ? "Unfavorite" : "Favorite"}
+                                    onClick={() => toggleFav(k, entry.id, seg.id)}
+                                  >{seg.fav ? "★" : "☆"}</button>
+                                  {(!seg.type || seg.type === "text") && (
+                                    <button className="xo-act" title="Edit" aria-label="Edit" onClick={() => startEdit(seg)}>✎</button>
+                                  )}
+                                  <button className="xo-act del" title="Delete" aria-label="Delete" onClick={() => deleteItem(k, entry.id, seg.id)}>×</button>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      </div>
+                    </div>
+                  );
+                })}
+                </div>}
+              </section>
+              );
+            })}
+
+            {loaded && hasEntries && (
+              <div className="xo-footer">
+                {confirmReset ? (
+                  <>
+                    <button className="xo-reset" style={{ color: "#FF8B96", borderColor: "rgba(255,75,92,0.4)" }} onClick={resetAll}>
+                      Yes, erase everything
+                    </button>
+                    <button className="xo-reset" onClick={() => setConfirmReset(false)}>Keep my journal</button>
+                  </>
+                ) : (
+                  <button className="xo-reset" onClick={() => setConfirmReset(true)}>
+                    Erase all entries
+                  </button>
+                )}
+              </div>
+            )}
+            </div>
+
+            <div className="xo-side">
+              <div className="xo-panel">
+                <h3>Mood — last 5 weeks</h3>
+                <div className="xo-minical">
+                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => <div className="mh" key={h}>{h}</div>)}
+                  {Array.from({ length: calPadStart }).map((_, i) => <div className="xo-mc dim" key={"pad" + i} />)}
+                  {calCells.map((c) => {
+                    const e = c.emotion ? emotionOf(c.emotion) : null;
+                    return (
+                      <div
+                        key={c.key}
+                        className="xo-mc"
+                        title={prettyDate(c.key, true) + (c.emotion ? " — " + emotionOf(c.emotion).label : "")}
+                        style={e ? { background: e.bg, borderColor: e.dot } : undefined}
+                      />
+                    );
+                  })}
+                </div>
+                <p className="xo-note" style={{ marginTop: 10, marginBottom: 0 }}>Each square is a day, colored by its dominant mood.</p>
+              </div>
+              {hasEntries && (
+                <div className="xo-panel">
+                  <h3>This week</h3>
+                  <div className="xo-weekbars">
+                    {last7.map((d) => (
+                      <div className="wb" key={d.key} title={prettyDate(d.key, true) + " — " + d.n + " note" + (d.n === 1 ? "" : "s")}>
+                        <div className="wbtrack"><div className="wbfill" style={{ height: Math.round(d.n / week7max * 100) + "%", opacity: d.n ? 1 : 0 }} /></div>
+                        <span>{d.lbl}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="xo-note" style={{ marginTop: 10, marginBottom: 0 }}>{notes7} note{notes7 === 1 ? "" : "s"} in the last 7 days</p>
+                </div>
+              )}
+              {moodMix.length > 0 && (
+                <div className="xo-panel">
+                  <h3>Mood mix</h3>
+                  {moodMix.map(([m, n]) => {
+                    const e = emotionOf(m);
+                    return (
+                      <div className="xo-statrow" key={m}>
+                        <span className="name" style={{ color: e.text }}>{e.label}</span>
+                        <span className="bar"><span className="fill" style={{ width: Math.round(n / moodMixMax * 100) + "%", background: e.dot }} /></span>
+                        <span className="n">{n}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {rewind && (
+                <div className="xo-panel">
+                  <h3>Rewind{rewind.seg.fav ? " ★" : ""}</h3>
+                  <p className="xo-note" style={{ marginBottom: 8 }}>
+                    {prettyDate(rewind.day)}{rewind.seg.topic ? " · " + rewind.seg.topic : ""}
+                  </p>
+                  <div className="xo-rewindtext">
+                    {itemPlainText(rewind.seg).slice(0, 280)}{itemPlainText(rewind.seg).length > 280 ? "…" : ""}
+                  </div>
+                  <div className="xo-panel-row" style={{ marginTop: 10 }}>
+                    <button className="xo-panel-btn" onClick={() => setRewind(pickRewind(days))}>Show another</button>
+                  </div>
+                </div>
+              )}
+              {recentPhotos.length > 0 && (
+                <div className="xo-panel">
+                  <h3>Recent photos</h3>
+                  <div className="xo-photostrip">
+                    {recentPhotos.map((pk) => <StoredImage key={pk} imgKey={pk} />)}
+                  </div>
+                </div>
+              )}
+              {topicRows.length > 0 && (
+                <div className="xo-panel">
+                  <h3>Top topics</h3>
+                  {topicRows.map(([t, n]) => (
+                    <div
+                      className="xo-statrow click"
+                      key={t}
+                      title="Filter by this topic"
+                      onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
+                    >
+                      <span className="name">{t}</span>
+                      <span className="bar"><span className="fill" style={{ width: Math.round(n / topicMax * 100) + "%", background: "var(--accent)" }} /></span>
+                      <span className="n">{n}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {otd.length > 0 && (
+                <div className="xo-panel">
+                  <h3>On this day</h3>
+                  {otd.map((o) => {
+                    const ens = days[o.key].entries || [];
+                    const allSegs = ens.flatMap((en) => en.segments || []);
+                    const topics = [...new Set(allSegs.map((s) => s.topic).filter(Boolean))].slice(0, 2).join(", ");
+                    const first = allSegs.find((s) => !s.type || s.type === "text");
+                    return (
+                      <p className="xo-note" key={o.key} style={{ margin: "0 0 8px" }}>
+                        <b style={{ color: "var(--body)" }}>{o.label}</b> you wrote about <em style={{ color: "var(--accent)", fontStyle: "normal" }}>{topics || "your day"}</em>
+                        {first ? <> — "{String(first.text).slice(0, 90)}{first.text.length > 90 ? "…" : ""}"</> : null}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            </div>
+          </>
+        )}
+
+        {view === "goals" && (
+          <>
+            <p className="xo-wallnote">
+              Set real-life goals, check in when you follow through, and let the AI suggest goals based on what you write about.
+            </p>
+
+            <div className="xo-composer" style={{ marginBottom: 18 }}>
+              <div className="xo-goalnew">
+                <input
+                  type="text"
+                  className="xo-search"
+                  style={{ borderRadius: 10 }}
+                  value={newGoal}
+                  onChange={(e) => setNewGoal(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { addGoal(newGoal); setNewGoal(""); } }}
+                  placeholder="Add a goal — e.g. Gym 3x this week, call Mom on Sundays…"
+                />
+                <button className="xo-add" onClick={() => { addGoal(newGoal); setNewGoal(""); }} disabled={!newGoal.trim()}>
+                  Add goal
+                </button>
+              </div>
+              <div className="xo-panel-row" style={{ marginTop: 12 }}>
+                <button className="xo-panel-btn" onClick={suggestGoals} disabled={sugBusy || !hasEntries}>
+                  {sugBusy ? "Reading your entries…" : "Suggest goals from my entries"}
+                </button>
+              </div>
+              {goalSugs.length > 0 && (
+                <div className="xo-sugs">
+                  {goalSugs.map((sg, i) => (
+                    <div className="xo-sug" key={i}>
+                      <div className="xo-sugtext">
+                        <b>{sg.goal}</b>
+                        <span>{sg.why}</span>
+                      </div>
+                      <button className="xo-panel-btn" onClick={() => { addGoal(sg.goal, "ai"); setGoalSugs(goalSugs.filter((_, j) => j !== i)); }}>
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {error && view === "goals" && <div className="xo-error">{error}</div>}
+            </div>
+
+            {goals.length === 0 && (
+              <div className="xo-empty">
+                <strong>No goals yet.</strong>
+                Add one above, or let the AI read your entries and suggest where to grow.
+              </div>
+            )}
+
+            {goals.filter((g) => !g.done).map((g) => {
+              const today = dayKey();
+              const doneToday = g.checkins.includes(today);
+              return (
+                <div className="xo-goal" key={g.id}>
+                  <div className="xo-goaltop">
+                    <span className="xo-goaltext">{g.text}</span>
+                    {g.from === "ai" && <span className="xo-aibadge" title="Suggested by the AI">AI</span>}
+                  </div>
+                  <div className="xo-goalmeta">
+                    <span className="xo-goalweek">
+                      {goalWeek(g).map((c) => (
+                        <i key={c.key} className={c.hit ? "hit" : ""} title={prettyDate(c.key, true)} />
+                      ))}
+                    </span>
+                    <span className="xo-goalstats">{weekCount(g)}/7 this week · {g.checkins.length} total</span>
+                  </div>
+                  <div className="xo-editrow" style={{ marginTop: 10 }}>
+                    <button className="save" onClick={() => checkInGoal(g.id)} disabled={doneToday}>
+                      {doneToday ? "✓ Checked in today" : "Check in today"}
+                    </button>
+                    <button onClick={() => toggleGoalDone(g.id)}>Mark complete</button>
+                    <button onClick={() => deleteGoal(g.id)}>Delete</button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {goals.some((g) => g.done) && (
+              <>
+                <h3 className="xo-subhead">Completed</h3>
+                {goals.filter((g) => g.done).map((g) => (
+                  <div className="xo-goal done" key={g.id}>
+                    <div className="xo-goaltop">
+                      <span className="xo-goaltext">✓ {g.text}</span>
+                    </div>
+                    <div className="xo-goalstats">{g.checkins.length} check-in{g.checkins.length === 1 ? "" : "s"}</div>
+                    <div className="xo-editrow" style={{ marginTop: 8 }}>
+                      <button onClick={() => toggleGoalDone(g.id)}>Reopen</button>
+                      <button onClick={() => deleteGoal(g.id)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+
+        {view === "trash" && (
+          <>
+            <p className="xo-wallnote">
+              Deleted entries live here for {TRASH_DAYS} days before disappearing for good. Restore puts them back on their original day.
+            </p>
+            {trash.length === 0 && (
+              <div className="xo-empty">
+                <strong>Nothing in the void.</strong>
+                Entries you delete will wait here for {TRASH_DAYS} days.
+              </div>
+            )}
+            {trash.map((t) => {
+              const e = emotionOf(t.item && t.item.emotion);
+              return (
+                <div className="xo-wallpost" key={t.tid}>
+                  <div className="xo-wallmeta">
+                    <span className="xo-topic" style={{ cursor: "default" }}>{t.topic}</span>
+                    <span className="xo-chip" style={{ background: e.bg, color: e.text }}>
+                      <i style={{ color: e.dot, background: e.dot }} />
+                      {e.label}
+                    </span>
+                    <span className="xo-walldate">
+                      from {prettyDate(t.day, true)} · deleted {new Date(t.deletedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                  <div className="xo-body" style={{ whiteSpace: "pre-wrap" }}>
+                    {t.item && t.item.type === "image"
+                      ? <StoredImage imgKey={t.item.imgKey} />
+                      : <Linkify text={itemPlainText(t.item || {})} />}
+                  </div>
+                  <div className="xo-editrow" style={{ marginTop: 10 }}>
+                    <button className="save" onClick={() => restoreItem(t.tid)}>Restore</button>
+                    <button onClick={() => purgeItem(t.tid)}>Delete forever</button>
+                  </div>
+                </div>
+              );
+            })}
+            {trash.length > 0 && (
+              <div className="xo-footer">
+                <button className="xo-reset" onClick={emptyTrash}>Empty recently deleted</button>
+              </div>
+            )}
+          </>
+        )}
+
+      </div>
+
+      {lightbox && (
+        <div className="xo-lightbox" onClick={() => setLightbox(null)}>
+          <button className="xo-lightclose" aria-label="Close" onClick={() => setLightbox(null)}>×</button>
+          <img
+            className="xo-lightimg"
+            src={imgCache[lightbox.imgKey]}
+            alt="Journal photo"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="xo-lightcap">{prettyDate(lightbox.day)}{lightbox.time ? " · " + lightbox.time : ""}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ================= cloud storage (same API the app already uses) =================
+function makeCloudStorage(sb, userId) {
+  return {
+    async get(key) {
+      const { data, error } = await sb.from("kv").select("value").eq("key", key).maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("not found");
+      return { key, value: data.value };
+    },
+    async set(key, value) {
+      const { error } = await sb.from("kv").upsert({ user_id: userId, key, value });
+      if (error) throw error;
+      return { key, value };
+    },
+    async delete(key) {
+      const { error } = await sb.from("kv").delete().eq("key", key);
+      if (error) throw error;
+      return { key, deleted: true };
+    },
+    async list(prefix = "") {
+      const { data, error } = await sb.from("kv").select("key").like("key", (prefix || "") + "%");
+      if (error) throw error;
+      return { keys: (data || []).map((r) => r.key) };
+    },
+  };
+}
+
+// ================= offline layer =================
+// Write-through localStorage mirror around cloud storage: reads fall back to the
+// mirror when offline, failed writes queue up and flush when the network returns.
+function makeOfflineStorage(cloud, userId) {
+  const pre = "daybook:mirror:" + userId + ":";
+  const dirtyKey = "daybook:dirty:" + userId;
+  // Photos are large base64 blobs — never mirror them to localStorage, or a handful
+  // would exhaust the ~5MB quota and starve the essential text/settings cache.
+  const isBig = (k) => k.startsWith(IMG_PREFIX);
+  const getDirty = () => { try { return JSON.parse(localStorage.getItem(dirtyKey) || "[]"); } catch (e) { return []; } };
+  const setDirty = (arr) => { try { localStorage.setItem(dirtyKey, JSON.stringify([...new Set(arr)])); } catch (e) { /* quota */ } };
+  const flush = async () => {
+    const dirty = getDirty();
+    if (!dirty.length) return;
+    const left = [];
+    for (const k of dirty) {
+      if (isBig(k)) continue; // photos aren't mirrored, so never sync them through the queue
+      const v = localStorage.getItem(pre + k);
+      try {
+        if (v === null) await cloud.delete(k);
+        else await cloud.set(k, v);
+      } catch (e) { left.push(k); }
+    }
+    setDirty(left);
+  };
+  window.addEventListener("online", flush);
+  setInterval(flush, 60000);
+  flush();
+  return {
+    async get(key) {
+      try {
+        const r = await cloud.get(key);
+        if (!isBig(key)) { try { localStorage.setItem(pre + key, r.value); } catch (e) { /* quota */ } }
+        return r;
+      } catch (err) {
+        if (err && err.message === "not found") throw err;
+        const v = localStorage.getItem(pre + key);
+        if (v !== null) return { key, value: v };
+        throw err;
+      }
+    },
+    async set(key, value) {
+      if (!isBig(key)) { try { localStorage.setItem(pre + key, value); } catch (e) { /* quota */ } }
+      try {
+        const r = await cloud.set(key, value);
+        setDirty(getDirty().filter((k) => k !== key)); // success clears any stale queued write
+        return r;
+      } catch (err) {
+        if (!isBig(key)) setDirty([...getDirty(), key]); // photos are best-effort; don't queue (can't recover the blob)
+        return { key, value, queued: !isBig(key) };
+      }
+    },
+    async delete(key) {
+      try { localStorage.removeItem(pre + key); } catch (e) { }
+      try {
+        const r = await cloud.delete(key);
+        setDirty(getDirty().filter((k) => k !== key));
+        return r;
+      } catch (err) { setDirty([...getDirty(), key]); return { key, deleted: true, queued: true }; }
+    },
+    async list(prefix) {
+      try { return await cloud.list(prefix); }
+      catch (err) {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const kk = localStorage.key(i);
+          if (kk && kk.startsWith(pre)) {
+            const rest = kk.slice(pre.length);
+            if (rest.startsWith(prefix || "")) keys.push(rest);
+          }
+        }
+        return { keys };
+      }
+    },
+  };
+}
+
+// ================= login screen =================
+function Login({ onDone }) {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [invite, setInvite] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const go = async () => {
+    if (busy) return;
+    setBusy(true); setMsg("");
+    try {
+      if (mode === "signup") {
+        const { error } = await window.__sb.auth.signUp({
+          email: email.trim(),
+          password: pw,
+          options: { data: { invite: invite.trim() } },
+        });
+        if (error) throw error;
+        const { error: e2 } = await window.__sb.auth.signInWithPassword({ email: email.trim(), password: pw });
+        if (e2) { setMsg("Account created — now sign in."); setMode("signin"); }
+        else onDone();
+      } else {
+        const { error } = await window.__sb.auth.signInWithPassword({ email: email.trim(), password: pw });
+        if (error) throw error;
+        onDone();
+      }
+    } catch (e) {
+      setMsg(e.message || "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="lg-root">
+      <style>{LG_CSS}</style>
+      <div className="lg-card">
+        <p className="lg-title">Journal<span>/ ai</span></p>
+        <p className="lg-sub">{mode === "signup" ? "Create your private journal" : "Welcome back"}</p>
+        <label>Email</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
+        <label>Password</label>
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••"
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          onKeyDown={(e) => { if (e.key === "Enter" && mode === "signin") go(); }} />
+        {mode === "signup" && (
+          <>
+            <label>Invite code</label>
+            <input type="text" value={invite} onChange={(e) => setInvite(e.target.value)} placeholder="From whoever sent you here"
+              onKeyDown={(e) => { if (e.key === "Enter") go(); }} />
+          </>
+        )}
+        <button className="lg-go" onClick={go} disabled={busy || !email.trim() || pw.length < 6}>
+          {busy ? "One sec…" : mode === "signup" ? "Create account" : "Sign in"}
+        </button>
+        {msg && <div className="lg-msg">{msg}</div>}
+        <div className="lg-alt">
+          {mode === "signup" ? (
+            <>Already have an account?<button onClick={() => { setMode("signin"); setMsg(""); }}>Sign in</button></>
+          ) : (
+            <>First time here?<button onClick={() => { setMode("signup"); setMsg(""); }}>Create account</button></>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================= root: session gate =================
+function AuthRoot() {
+  const [session, setSession] = useState(undefined); // undefined = checking
+
+  const refresh = async () => {
+    const { data } = await window.__sb.auth.getSession();
+    setSession(data.session || null);
+  };
+
+  useEffect(() => {
+    refresh();
+    const { data: sub } = window.__sb.auth.onAuthStateChange((_e, s) => setSession(s || null));
+    return () => { sub && sub.subscription && sub.subscription.unsubscribe(); };
+  }, []);
+
+  if (session === undefined) {
+    return <div style={{ minHeight: "100vh", background: "#0a0b0e", color: "#7c8390",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "Inter, system-ui, sans-serif" }}>Opening your journal…</div>;
+  }
+  if (!session) return <Login onDone={refresh} />;
+
+  window.__session = session;
+  if (window.__storageFor !== session.user.id) {
+    window.storage = makeOfflineStorage(makeCloudStorage(window.__sb, session.user.id), session.user.id);
+    window.__storageFor = session.user.id;
+  }
+  window.__signOut = async () => { await window.__sb.auth.signOut(); };
+
+  return <XOJournal key={session.user.id} />;
+}
+
+const __CLEAN_URL = (function(){ try { return new URL(SUPABASE_URL).origin; } catch (e) { return String(SUPABASE_URL).replace(/\/(rest|auth)\/v1\/?$/, "").replace(/\/+$/, ""); } })();
+window.__sb = supabase.createClient(__CLEAN_URL, SUPABASE_ANON_KEY);
+ReactDOM.createRoot(document.getElementById("root")).render(<AuthRoot />);
+
+</script>
+<script>
+if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js").catch(function(){}); }
+</script>
+</body>
+</html>
