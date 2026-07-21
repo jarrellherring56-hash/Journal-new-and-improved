@@ -1943,6 +1943,46 @@ Digest:
           .xo-gear:hover, .xo-panel-btn:hover, .xo-preset:hover, .xo-add:hover, .xo-attach:hover, .xo-mic:hover, .xo-ask:hover { transform: none; }
         }
 
+        /* ================= DESKTOP REFINEMENTS (phone layout untouched) ================= */
+        @media (min-width: 701px) {
+          /* header stays reachable while scrolling a long journal */
+          .xo-top {
+            position: sticky; top: 0; z-index: 30;
+            padding: 14px 0 12px; margin-bottom: 10px;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, transparent) 58%, transparent);
+            -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+          }
+
+          /* the writing box is the main event */
+          .xo-composer { padding: 20px; }
+          .xo-composer textarea { min-height: 118px; font-size: 15px; }
+
+          /* KPI cards get a little more presence; hero picks up an accent edge */
+          .xo-kpi { padding: 20px 22px; }
+          .xo-kpi.hero { position: relative; overflow: hidden; }
+          .xo-kpi.hero::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+
+          /* entries: tags read as the headline, roomier body */
+          .xo-section { padding: 16px 18px; }
+          .xo-section-head { margin-bottom: 10px; }
+          .xo-segmain { font-size: 14.5px; }
+          .xo-daycard:hover { border-color: rgba(var(--accent-rgb), 0.3); }
+
+          /* sidebar: tighter panels so more of the dashboard fits at once */
+          .xo-side .xo-panel { padding: 18px; margin-bottom: 12px; }
+          .xo-side .xo-panel h3 { font-size: 14px; margin-bottom: 12px; }
+        }
+
+        /* wide screens: give the reading column and the dashboard rail more room */
+        @media (min-width: 1001px) {
+          .xo-shell { max-width: 1280px; }
+          .xo-grid2 { grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; }
+        }
+        @media (min-width: 1500px) {
+          .xo-shell { max-width: 1400px; }
+          .xo-grid2 { grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; }
+        }
+
         /* ================= SIDEBAR STATS ================= */
         .xo-weekbars { display: flex; gap: 6px; height: 92px; }
         .xo-weekbars .wb { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -2564,9 +2604,20 @@ Digest:
                 </div>
                 {open && <div className="xo-daybody">
                 {entries.map((entry) => {
+                  const entryTags = [...new Set(entry.segments.flatMap(segTags))];
                   return (
                     <div className="xo-section" key={entry.id}>
                       <div className="xo-section-head">
+                        {entryTags.map((t) => (
+                          <button
+                            key={t}
+                            className={topicFilter.toLowerCase() === t.toLowerCase() ? "xo-tag on" : "xo-tag"}
+                            title="Filter by this tag"
+                            onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
+                          >
+                            {t}
+                          </button>
+                        ))}
                         <span className="xo-entrytime">{entry.time}</span>
                       </div>
                       <div className="xo-flow">
@@ -2603,20 +2654,6 @@ Digest:
                                   )}
                                   {seg.type === "recap" && (
                                     <p className="xo-recap"><span className="xo-aibadge">RECAP</span>{seg.text}</p>
-                                  )}
-                                  {segTags(seg).length > 0 && (
-                                    <div className="xo-segtags">
-                                      {segTags(seg).map((t) => (
-                                        <button
-                                          key={t}
-                                          className={topicFilter.toLowerCase() === t.toLowerCase() ? "xo-tag on" : "xo-tag"}
-                                          title="Filter by this tag"
-                                          onClick={() => setTopicFilter(topicFilter.toLowerCase() === t.toLowerCase() ? "" : t)}
-                                        >
-                                          {t}
-                                        </button>
-                                      ))}
-                                    </div>
                                   )}
                                 </>
                               )}
