@@ -45,9 +45,9 @@ Replace with your **Project URL** and **anon/public** key from step 1.4. Save.
 | `SUPABASE_SERVICE_KEY` | your service_role key |
 | `INVITE_CODE` | any word you choose, e.g. `XOCREW` |
 | `DAILY_LIMIT` | optional, AI calls per person per day (default 300) |
-| `MODEL` | optional; default `claude-haiku-4-5` (cheap). For smarter sorting use `claude-sonnet-5` (costs more). |
-| `WEB_SEARCH` | optional; `on` lets the AI search the web for questions needing current info ($0.01/search). Off unless set. |
-| `WEB_SEARCH_MAX_USES` | optional; searches per question (default 3) |
+| `MODEL` | optional; default `claude-sonnet-4-6`. Cheaper: `claude-haiku-4-5`. Best: `claude-opus-4-8`. |
+| `WEB_SEARCH` | optional; on by default. Set to `off` to disable web search entirely. |
+| `WEB_SEARCH_MAX_USES` | optional; searches per question (default 5) |
 
 4. **Deploy.** You'll get a link like `https://your-journal.vercel.app`.
 

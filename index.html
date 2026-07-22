@@ -301,7 +301,11 @@ async function callClaudeRaw(prompt, maxTokens = 1000, web = false) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || ("API request failed: " + response.status));
-  return { text: String(data.text || "").trim(), sources: Array.isArray(data.sources) ? data.sources : [] };
+  return {
+    text: String(data.text || "").trim(),
+    sources: Array.isArray(data.sources) ? data.sources : [],
+    webError: data.webError || null,
+  };
 }
 async function callClaude(prompt, maxTokens = 1000) {
   return (await callClaudeRaw(prompt, maxTokens)).text;
@@ -590,13 +594,6 @@ const LG_CSS = `
   .lg-alt button { background: none; border: none; color: #3ce6a4; cursor: pointer;
     font: 600 13.5px 'Inter', sans-serif; padding: 0 4px; }
   .lg-msg { margin-top: 12px; color: #ff6b81; font-size: 13.5px; text-align: center; }
-  .lg-or { display: flex; align-items: center; gap: 10px; margin: 16px 0 12px; color: #6b7280; font-size: 12px; }
-  .lg-or::before, .lg-or::after { content: ""; flex: 1; height: 1px; background: #20242c; }
-  .lg-google { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
-    background: #ffffff; border: 1px solid #dadce0; color: #1f1f1f;
-    font: 600 13.5px 'Inter', sans-serif; padding: 11px; border-radius: 99px; cursor: pointer;
-    transition: box-shadow .2s; }
-  .lg-google:hover { box-shadow: 0 2px 10px rgba(0,0,0,.28); }
 `;
 
 // ---------- privacy lock screen ----------
@@ -814,9 +811,10 @@ function XOJournal() {
   const promptRequested = useRef(false);
 
   // ----- initial load -----
+  const pullCloud = useRef(null);
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const pull = async () => {
       const [d, s, t, g, sc, np] = await Promise.all([
         loadJSON(STORAGE_KEY, {}),
         loadJSON(SETTINGS_KEY, DEFAULT_SETTINGS),
@@ -847,9 +845,36 @@ function XOJournal() {
       setTrash(kept);
       setSettings(merged);
       setLoaded(true);
-    })();
-    return () => { alive = false; };
+    };
+    pullCloud.current = pull;
+    pull();
+    return () => { alive = false; pullCloud.current = null; };
   }, []);
+
+  // ----- cross-device refresh -----
+  // Another device (phone vs laptop) can write while this tab sits open. Re-read
+  // the cloud whenever the tab comes back to the foreground so both stay in step.
+  // Skipped mid-work: an in-flight AI call or an unsaved draft must not be
+  // stomped by a background pull.
+  useEffect(() => {
+    if (!loaded) return;
+    const onWake = async () => {
+      if (document.hidden) return;
+      if (busy || draft.trim()) return;
+      // push anything written while offline first, so the pull below doesn't
+      // show us an older cloud copy than what this device is still holding
+      try { if (window.storage.flush) await window.storage.flush(); } catch (e) { }
+      if (pullCloud.current) pullCloud.current();
+    };
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+    window.addEventListener("online", onWake);
+    return () => {
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
+      window.removeEventListener("online", onWake);
+    };
+  }, [loaded, busy, draft]);
 
   // ----- style pack: fonts & layout follow the picked theme; plain colors stay clean -----
   const theme = THEMES[settings.theme] || THEMES.green;
@@ -865,8 +890,8 @@ function XOJournal() {
   const aiIdentity = aiName
     ? `Your name is ${aiName}. They may address you as ${aiName} — answer to it naturally, and never mention being an AI model or assistant.`
     : "";
-  // Web search is off unless you turn it on — it bills per search on top of tokens.
-  const webSearch = settings.webSearch === true;
+  // Web search is on by default; set it to false in Customize to turn it off.
+  const webSearch = settings.webSearch !== false;
 
   const updateSettings = (patch) => {
     setSettings((prev) => {
@@ -1144,9 +1169,9 @@ Their recent entries:
 """${digest || "no entries yet"}"""
 
 Their question: "${question}"`, 700, webSearch));
-      setAskMsgs((m) => [...m, { role: "a", text: res.text, sources: res.sources }]);
+      setAskMsgs((m) => [...m, { role: "a", text: res.text, sources: res.sources, webError: res.webError }]);
     } catch (e) {
-      setAskMsgs((m) => [...m, { role: "a", text: "I couldn't reach the AI just now — try again in a moment." }]);
+      setAskMsgs((m) => [...m, { role: "a", text: "Couldn't reach the AI — " + ((e && e.message) || "unknown error") }]);
     } finally {
       setAskBusy(false);
     }
@@ -2420,6 +2445,8 @@ Digest:
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
         .xo-sources a:hover { opacity: 1; text-decoration: underline; }
 
+        .xo-weberr { margin-top: 8px; font-size: 11.5px; color: #ff8b96; line-height: 1.5; }
+
         /* ---------- filter bar + tag dropdown ---------- */
         .xo-filterbar { display: flex; gap: 10px; margin: 0 0 12px; align-items: stretch; flex-wrap: wrap; }
         .xo-filterbar > .xo-search { flex: 1; min-width: 180px; }
@@ -2715,9 +2742,8 @@ Digest:
               ))}
             </div>
             <p className="xo-note" style={{ marginTop: 8 }}>
-              Only used when you ask a question (@ai or the {aiName || "Ask"} tab) that needs current info — never for
-              sorting entries or recaps. Costs about a cent per search on top of normal usage, and answers come with
-              their sources. Your deployment must also have <code>WEB_SEARCH=on</code> set.
+              On by default. Used whenever you ask a question (@ai or the {aiName || "Ask"} tab) that needs current
+              info — never for sorting entries or recaps. Answers come with their sources. About a cent per search.
             </p>
 
             {allTagRows.length > 0 && (
@@ -3045,6 +3071,9 @@ Digest:
                   {m.role === "a" && <span className="xo-aibadge">{aiLabel}</span>}
                   <Linkify text={m.text} />
                   <Sources list={m.sources} />
+                  {m.webError && (
+                    <div className="xo-weberr">Answered without searching — web search was rejected: {m.webError}</div>
+                  )}
                 </div>
               ))}
               {askBusy && (
@@ -3578,53 +3607,102 @@ Digest:
 
 
 // ================= cloud storage (same API the app already uses) =================
+// Every query is scoped to user_id as well as key. Row Level Security already
+// enforces that, but being explicit keeps maybeSingle() deterministic and makes
+// the upsert's conflict target unambiguous on the composite (user_id, key) key.
 function makeCloudStorage(sb, userId) {
   return {
     async get(key) {
-      const { data, error } = await sb.from("kv").select("value").eq("key", key).maybeSingle();
+      const { data, error } = await sb
+        .from("kv").select("value,updated_at")
+        .eq("user_id", userId).eq("key", key).maybeSingle();
       if (error) throw error;
       if (!data) throw new Error("not found");
-      return { key, value: data.value };
+      return { key, value: data.value, updatedAt: data.updated_at || null };
     },
+    // Read the stored timestamp back rather than trusting our own clock: the
+    // table stamps it server-side, and the offline queue compares those stamps
+    // to decide whose copy is newer. A device with a wrong clock stays honest.
     async set(key, value) {
-      const { error } = await sb.from("kv").upsert({ user_id: userId, key, value });
+      const { data, error } = await sb
+        .from("kv")
+        .upsert({ user_id: userId, key, value, updated_at: new Date().toISOString() }, { onConflict: "user_id,key" })
+        .select("updated_at")
+        .maybeSingle();
       if (error) throw error;
-      return { key, value };
+      return { key, value, updatedAt: (data && data.updated_at) || null };
     },
     async delete(key) {
-      const { error } = await sb.from("kv").delete().eq("key", key);
+      const { error } = await sb.from("kv").delete().eq("user_id", userId).eq("key", key);
       if (error) throw error;
       return { key, deleted: true };
     },
     async list(prefix = "") {
-      const { data, error } = await sb.from("kv").select("key").like("key", (prefix || "") + "%");
+      const { data, error } = await sb
+        .from("kv").select("key")
+        .eq("user_id", userId).like("key", (prefix || "") + "%");
       if (error) throw error;
       return { keys: (data || []).map((r) => r.key) };
+    },
+    // cheap "has anyone else written this since?" probe for the flush guard
+    async stamp(key) {
+      const { data, error } = await sb
+        .from("kv").select("updated_at")
+        .eq("user_id", userId).eq("key", key).maybeSingle();
+      if (error) throw error;
+      return data ? (data.updated_at || null) : null;
     },
   };
 }
 
 // ================= offline layer =================
 // Write-through localStorage mirror around cloud storage: reads fall back to the
-// mirror when offline, failed writes queue up and flush when the network returns.
+// mirror when offline, and writes that failed offline retry when the network
+// returns. Each mirrored entry records the cloud timestamp it was based on, so a
+// queued write can never overwrite something a different device wrote later.
 function makeOfflineStorage(cloud, userId) {
   const pre = "daybook:mirror:" + userId + ":";
   const dirtyKey = "daybook:dirty:" + userId;
   // Photos are large base64 blobs — never mirror them to localStorage, or a handful
   // would exhaust the ~5MB quota and starve the essential text/settings cache.
   const isBig = (k) => k.startsWith(IMG_PREFIX);
+
+  // mirror entries are {v: value, t: cloud updated_at we based on}. Older builds
+  // stored a bare string, so tolerate that shape on read.
+  const readMirror = (key) => {
+    let raw = null;
+    try { raw = localStorage.getItem(pre + key); } catch (e) { return null; }
+    if (raw === null) return null;
+    try {
+      const o = JSON.parse(raw);
+      if (o && typeof o === "object" && typeof o.v === "string") return { v: o.v, t: o.t || null };
+    } catch (e) { /* legacy plain string */ }
+    return { v: raw, t: null };
+  };
+  const writeMirror = (key, value, t) => {
+    if (isBig(key)) return;
+    try { localStorage.setItem(pre + key, JSON.stringify({ v: value, t: t || null })); } catch (e) { /* quota */ }
+  };
+
   const getDirty = () => { try { return JSON.parse(localStorage.getItem(dirtyKey) || "[]"); } catch (e) { return []; } };
   const setDirty = (arr) => { try { localStorage.setItem(dirtyKey, JSON.stringify([...new Set(arr)])); } catch (e) { /* quota */ } };
+
   const flush = async () => {
     const dirty = getDirty();
     if (!dirty.length) return;
     const left = [];
     for (const k of dirty) {
       if (isBig(k)) continue; // photos aren't mirrored, so never sync them through the queue
-      const v = localStorage.getItem(pre + k);
+      const m = readMirror(k);
       try {
-        if (v === null) await cloud.delete(k);
-        else await cloud.set(k, v);
+        if (m === null) { await cloud.delete(k); continue; } // queued delete
+        // Whoever wrote last wins ONLY if they wrote after us. If the cloud copy
+        // changed since this device last saw it, another device is ahead — drop
+        // our queued write rather than destroying their entries.
+        const cloudStamp = await cloud.stamp(k);
+        if (cloudStamp && (!m.t || cloudStamp > m.t)) continue;
+        const r = await cloud.set(k, m.v);
+        writeMirror(k, m.v, r.updatedAt);
       } catch (e) { left.push(k); }
     }
     setDirty(left);
@@ -3632,27 +3710,32 @@ function makeOfflineStorage(cloud, userId) {
   window.addEventListener("online", flush);
   setInterval(flush, 60000);
   flush();
+
   return {
+    flush,
     async get(key) {
       try {
         const r = await cloud.get(key);
-        if (!isBig(key)) { try { localStorage.setItem(pre + key, r.value); } catch (e) { /* quota */ } }
+        writeMirror(key, r.value, r.updatedAt);
         return r;
       } catch (err) {
         if (err && err.message === "not found") throw err;
-        const v = localStorage.getItem(pre + key);
-        if (v !== null) return { key, value: v };
+        const m = readMirror(key); // offline: fall back to the local copy
+        if (m) return { key, value: m.v };
         throw err;
       }
     },
     async set(key, value) {
-      if (!isBig(key)) { try { localStorage.setItem(pre + key, value); } catch (e) { /* quota */ } }
+      const base = readMirror(key);
       try {
         const r = await cloud.set(key, value);
+        writeMirror(key, value, r.updatedAt);
         setDirty(getDirty().filter((k) => k !== key)); // success clears any stale queued write
         return r;
       } catch (err) {
-        if (!isBig(key)) setDirty([...getDirty(), key]); // photos are best-effort; don't queue (can't recover the blob)
+        // offline: keep the value locally with the base stamp so flush can compare
+        writeMirror(key, value, base ? base.t : null);
+        if (!isBig(key)) setDirty([...getDirty(), key]); // photos are best-effort (can't recover the blob)
         return { key, value, queued: !isBig(key) };
       }
     },
@@ -3739,26 +3822,6 @@ function Login({ onDone }) {
           {busy ? "One sec…" : mode === "signup" ? "Create account" : "Sign in"}
         </button>
 
-        <div className="lg-or"><span>or</span></div>
-        <button
-          className="lg-google"
-          onClick={async () => {
-            setMsg("");
-            const { error } = await window.__sb.auth.signInWithOAuth({
-              provider: "google",
-              options: { redirectTo: window.location.origin },
-            });
-            if (error) setMsg(error.message);
-          }}
-        >
-          <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
-            <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.2-3.8 6.6-9.500 6.6-16.1z"/>
-            <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.1 15.5 46 24 46z"/>
-            <path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.3-2.9.7-4.2v-5.7H4.5C3 17.1 2.1 20.4 2.1 24s.9 6.9 2.4 9.9l7.3-5.7z"/>
-            <path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 6.9 4.5 14.1l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/>
-          </svg>
-          Continue with Google
-        </button>
         {msg && <div className="lg-msg">{msg}</div>}
         <div className="lg-alt">
           {mode === "signup" ? (
@@ -3766,47 +3829,6 @@ function Login({ onDone }) {
           ) : (
             <>First time here?<button onClick={() => { setMode("signup"); setMsg(""); }}>Create account</button></>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ================= invite gate (OAuth sign-ups carry no invite code yet) =================
-function InviteGate({ onDone }) {
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const save = async () => {
-    if (!code.trim() || busy) return;
-    setBusy(true); setMsg("");
-    try {
-      const { error } = await window.__sb.auth.updateUser({ data: { invite: code.trim() } });
-      if (error) throw error;
-      onDone();
-    } catch (e) {
-      setMsg((e && e.message) || "Couldn't save that — try again.");
-    } finally { setBusy(false); }
-  };
-  return (
-    <div className="lg-root">
-      <style>{LG_CSS}</style>
-      <div className="lg-card">
-        <p className="lg-title">Journal<span>/ almost in</span></p>
-        <p className="lg-sub">One last thing — enter the invite code from whoever sent you here.</p>
-        <label>Invite code</label>
-        <input
-          type="text" autoFocus value={code}
-          onChange={(e) => setCode(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-          placeholder="e.g. XOCREW"
-        />
-        <button className="lg-go" onClick={save} disabled={busy || !code.trim()}>
-          {busy ? "One sec…" : "Continue"}
-        </button>
-        {msg && <div className="lg-msg">{msg}</div>}
-        <div className="lg-alt">
-          Wrong account?<button onClick={() => window.__sb.auth.signOut()}>Sign out</button>
         </div>
       </div>
     </div>
@@ -3834,11 +3856,6 @@ function AuthRoot() {
       fontFamily: "Inter, system-ui, sans-serif" }}>Opening your journal…</div>;
   }
   if (!session) return <Login onDone={refresh} />;
-  // Google sign-ups have no invite code yet — collect it before the journal opens,
-  // otherwise the AI proxy rejects every request from them.
-  if (!((session.user && session.user.user_metadata) || {}).invite) {
-    return <InviteGate onDone={refresh} />;
-  }
 
   window.__session = session;
   if (window.__storageFor !== session.user.id) {

@@ -10,6 +10,23 @@ create table if not exists kv (
   primary key (user_id, key)
 );
 
+-- `default now()` only fires on INSERT, so an updated row would keep its original
+-- timestamp forever. This trigger stamps every write with the SERVER clock, which
+-- is what lets the app tell whether a phone or a laptop wrote last (a device with
+-- a wrong clock can't corrupt the ordering).
+create or replace function kv_touch()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end $$;
+
+drop trigger if exists kv_touch_trg on kv;
+create trigger kv_touch_trg before insert or update on kv
+  for each row execute function kv_touch();
+
 alter table kv enable row level security;
 
 drop policy if exists "own rows only" on kv;
