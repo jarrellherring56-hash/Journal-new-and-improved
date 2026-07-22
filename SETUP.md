@@ -47,7 +47,13 @@ Replace with your **Project URL** and **anon/public** key from step 1.4. Save.
 | `DAILY_LIMIT` | optional, AI calls per person per day (default 300) |
 | `MODEL` | optional; default `claude-sonnet-4-6`. Cheaper: `claude-haiku-4-5`. Best: `claude-opus-4-8`. |
 | `WEB_SEARCH` | optional; on by default. Set to `off` to disable web search entirely. |
-| `WEB_SEARCH_MAX_USES` | optional; searches per question (default 5) |
+| `WEB_SEARCH_MAX_USES` | optional; results per question (default 5) |
+
+Using OpenRouter instead of Anthropic? Set `OPENROUTER_API_KEY` rather than
+`ANTHROPIC_API_KEY`. Web search works on both, through different mechanisms:
+OpenRouter uses its own `web` plugin (~$0.005 per question, up to 10 results),
+Anthropic uses its built-in search tool (~$0.01 per search). Token costs are
+extra on either.
 
 4. **Deploy.** You'll get a link like `https://your-journal.vercel.app`.
 
