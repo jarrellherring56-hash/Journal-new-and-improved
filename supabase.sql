@@ -58,3 +58,38 @@ begin
   returning count into c;
   return c;
 end $$;
+
+-- ============ push notifications ============
+
+-- One row per device that turned reminders on. `sub` is the browser's push
+-- subscription (endpoint + keys). `tz` is that device's timezone, so the cron
+-- can turn a schedule item's local "3:00 PM" into the right moment to fire.
+create table if not exists push_subs (
+  user_id uuid not null,
+  endpoint text not null,
+  sub jsonb not null,
+  tz text,
+  reminder_time text,           -- "HH:MM" for the daily "time to journal" nudge, or null = off
+  updated_at timestamptz not null default now(),
+  primary key (user_id, endpoint)
+);
+
+alter table push_subs enable row level security;
+
+drop policy if exists "own subs only" on push_subs;
+create policy "own subs only" on push_subs
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Remembers what has already been pushed so the cron never sends the same
+-- reminder twice. `tag` is e.g. "sched:<itemid>" or "journal:2026-07-22".
+create table if not exists push_log (
+  user_id uuid not null,
+  tag text not null,
+  sent_at timestamptz not null default now(),
+  primary key (user_id, tag)
+);
+
+alter table push_log enable row level security;
+-- no policies: only the server (service key) reads/writes this.

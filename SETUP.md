@@ -48,6 +48,10 @@ Replace with your **Project URL** and **anon/public** key from step 1.4. Save.
 | `MODEL` | optional; default `claude-sonnet-4-6`. Cheaper: `claude-haiku-4-5`. Best: `claude-opus-4-8`. |
 | `WEB_SEARCH` | optional; on by default. Set to `off` to disable web search entirely. |
 | `WEB_SEARCH_MAX_USES` | optional; results per question (default 5) |
+| `VAPID_PUBLIC` | for reminders; see below |
+| `VAPID_PRIVATE` | for reminders; see below |
+| `VAPID_SUBJECT` | for reminders; `mailto:you@example.com` |
+| `CRON_SECRET` | optional; any random word — stops outsiders poking the reminder job |
 
 Using OpenRouter instead of Anthropic? Set `OPENROUTER_API_KEY` rather than
 `ANTHROPIC_API_KEY`. Web search works on both, through different mechanisms:
@@ -57,6 +61,25 @@ extra on either.
 
 4. **Deploy.** You'll get a link like `https://your-journal.vercel.app`.
 
+## 4b. Reminders / notifications (optional)
+
+Push notifications need a key pair (VAPID) and a scheduled job. The job runs
+every 5 minutes and requires the **Vercel Pro plan** (Hobby caps cron at once a
+day, which can't do exact-time reminders).
+
+1. In Vercel → your project → **Settings → Environment Variables**, add the
+   `VAPID_PUBLIC`, `VAPID_PRIVATE`, and `VAPID_SUBJECT` values you were given
+   (`VAPID_SUBJECT` is just `mailto:` + your email). Optionally add a
+   `CRON_SECRET` set to any random word.
+2. The `VAPID_PUBLIC` value must ALSO match the one near the top of `index.html`
+   (`const VAPID_PUBLIC = "…"`). If you generate a fresh pair, update both.
+3. Redeploy. Vercel picks up the schedule from `vercel.json` automatically.
+4. Reminders are **on by default** — no setting to find. The permission popup
+   appears by itself the first time you interact with the app (tap anything);
+   just choose **Allow**. On iPhone, add the app to the Home Screen and open it
+   from there first (web push doesn't work in a plain Safari tab). To stop a
+   device buzzing, switch Reminders **Off** in Customize.
+
 ## 5. Invite your friends
 
 Send them: the link + the invite code. They tap **Create account** (email + password + code) and they're in.
@@ -64,6 +87,12 @@ Send them: the link + the invite code. They tap **Create account** (email + pass
 - **Android:** Chrome → menu → **Add to Home screen** / Install app.
 
 ---
+
+## Node version
+`package.json` pins `"node": "24.x"`. Vercel warns about open-ended ranges like
+`>=18` because they'd auto-jump to whatever major ships next, so a future Node
+release could break the AI endpoint with no change from you. Bump this
+deliberately when you want to move.
 
 ## How updates work
 Tell Claude what to change → get an updated `index.html` (or other file) → replace it in your project → redeploy (with GitHub connected, just push and it deploys itself). Nobody's data is ever touched by updates.

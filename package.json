@@ -4,6 +4,9 @@
   "private": true,
   "description": "A private AI journal — static PWA front end with a serverless AI proxy.",
   "engines": {
-    "node": ">=18"
+    "node": "24.x"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
   }
 }

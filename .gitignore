@@ -8,6 +8,10 @@ node_modules
 .env
 .env.*
 *.local
+VAPID_KEYS.txt
+
+# Local-only backup, not part of the app
+index-neon.html
 
 # OS / editor cruft
 .DS_Store

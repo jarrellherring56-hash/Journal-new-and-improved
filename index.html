@@ -17,6 +17,9 @@
 // ======== PASTE YOUR TWO SUPABASE VALUES HERE (Project Settings -> API) ========
 const SUPABASE_URL = "https://yzyswdtavffiemeaxjvf.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6eXN3ZHRhdmZmaWVtZWF4anZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MDk2NDEsImV4cCI6MjEwMDE4NTY0MX0.cOAsVvoxSjo5W2BqYw3IxUMZpwMifeJOc-bu4smfn6w";
+// Public half of the push keypair — safe to ship in the browser. The private half
+// lives only in Vercel (VAPID_PRIVATE). Regenerate both together if you ever rotate.
+const VAPID_PUBLIC = "BHgR9puns5NbJjWz9m0zyOxPEee8Nd7mC8uH_QLnXG29cfVWp_M71_1-PivRfRymV6i5qu98cg1R22IOLwSF-RA";
 </script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -84,7 +87,60 @@ const ALBUM_PRESETS = [
 ];
 const DEFAULT_SETTINGS = {
   name: "Journal", theme: "mint", bg: "slate", tagline: "", customTagline: "",
+  remindersOn: true, reminderTime: "20:00",
 };
+
+// ---------- push notification helpers ----------
+const urlB64ToUint8 = (b64) => {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const s = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(s);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+const pushSupported = () =>
+  "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+// Subscribe this device and tell the server (endpoint + timezone + nudge time).
+// Returns an error string, or "" on success.
+async function enablePush(reminderTime) {
+  if (!pushSupported()) return "This device can't do notifications. On iPhone, add the app to your Home Screen first.";
+  const perm = await Notification.requestPermission();
+  if (perm === "denied") return "Notifications are blocked — allow them in your phone/browser settings.";
+  if (perm !== "granted") return "Tap Reminders → On to allow notifications on this device.";
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8(VAPID_PUBLIC),
+    });
+  }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const token = window.__session && window.__session.access_token;
+  const r = await fetch("/api/push", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ subscription: sub, tz, reminderTime }),
+  });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); return d.error || "Could not turn on reminders."; }
+  return "";
+}
+
+async function disablePush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const token = window.__session && window.__session.access_token;
+      await fetch("/api/push", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ subscription: sub }),
+      }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
+  } catch (e) { /* best effort */ }
+}
 
 // ---------- emotion palette ----------
 const EMOTIONS = {
@@ -900,6 +956,59 @@ function XOJournal() {
       return next;
     });
   };
+
+  // ----- reminders / push notifications -----
+  const [pushMsg, setPushMsg] = useState("");
+  const [pushBusy, setPushBusy] = useState(false);
+  const toggleReminders = async (on) => {
+    setPushBusy(true); setPushMsg("");
+    if (on) {
+      const err = await enablePush(settings.reminderTime || "20:00");
+      if (err) { setPushMsg(err); setPushBusy(false); return; }
+      updateSettings({ remindersOn: true });
+    } else {
+      await disablePush();
+      updateSettings({ remindersOn: false });
+    }
+    setPushBusy(false);
+  };
+  // when reminders are on and the nudge time changes, re-register so the server
+  // gets the new time (and refreshes this device's timezone while we're at it)
+  const changeReminderTime = async (t) => {
+    updateSettings({ reminderTime: t });
+    if (settings.remindersOn) { setPushBusy(true); await enablePush(t); setPushBusy(false); }
+  };
+  // Reminders default ON, so this device registers itself with no trip to
+  // settings. Apple still requires the permission prompt to come from a real
+  // user gesture, so we piggy-back on the FIRST tap/keypress anywhere in the app
+  // (tapping the textarea, switching tabs, etc). The user never hunts for a
+  // switch — the OS "Allow?" popup just appears the moment they start using it.
+  // (Tapping "Allow" on that system popup is Apple's own step; nothing can skip it.)
+  const autoPushRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || autoPushRef.current) return;
+    autoPushRef.current = true;
+    if (!settings.remindersOn || !pushSupported()) return;
+    if (Notification.permission === "denied") return;
+    if (Notification.permission === "granted") {
+      enablePush(settings.reminderTime || "20:00"); // already allowed: silent re-register
+      return;
+    }
+    const onFirst = () => {
+      document.removeEventListener("pointerdown", onFirst, true);
+      document.removeEventListener("keydown", onFirst, true);
+      // must call requestPermission synchronously inside the gesture (iOS rule)
+      enablePush(settings.reminderTime || "20:00").then((err) => {
+        if (err && Notification.permission === "denied") setPushMsg(err);
+      });
+    };
+    document.addEventListener("pointerdown", onFirst, true);
+    document.addEventListener("keydown", onFirst, true);
+    return () => {
+      document.removeEventListener("pointerdown", onFirst, true);
+      document.removeEventListener("keydown", onFirst, true);
+    };
+  }, [loaded]);
 
   // ----- welcome-back note (every open; the ↻ button re-rolls it) -----
   const genWelcome = () => {
@@ -2728,6 +2837,36 @@ Digest:
               onChange={(e) => updateSettings({ aiName: e.target.value })}
               placeholder="e.g. Kuro, Sage, Ghost — leave blank for just “AI”"
             />
+
+            <label style={{ marginTop: 14 }}>Reminders</label>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+              {[[true, "On"], [false, "Off"]].map(([val, lbl]) => (
+                <button
+                  key={String(val)}
+                  className={!!settings.remindersOn === val ? "xo-topicchip on" : "xo-topicchip"}
+                  disabled={pushBusy}
+                  onClick={() => toggleReminders(val)}
+                >
+                  {pushBusy && val === !settings.remindersOn ? "…" : lbl}
+                </button>
+              ))}
+            </div>
+            {settings.remindersOn && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+                <span className="xo-note" style={{ margin: 0 }}>Daily journal nudge at</span>
+                <input type="time" className="xo-search" style={{ width: "auto" }}
+                  value={settings.reminderTime || "20:00"}
+                  onChange={(e) => changeReminderTime(e.target.value)} />
+              </div>
+            )}
+            <p className="xo-note" style={{ marginTop: 8 }}>
+              On by default — you get a notification a few minutes before anything on your Schedule, plus a
+              once-daily nudge to journal if you haven't written by your chosen time. Switch off here on any
+              device you don't want buzzing.{" "}
+              <b>On iPhone, add the app to your Home Screen and open it from there</b> — then just tap
+              <b> Allow</b> when your phone asks.
+            </p>
+            {pushMsg && <p className="xo-weberr" style={{ marginTop: 6 }}>{pushMsg}</p>}
 
             <label style={{ marginTop: 14 }}>Web search</label>
             <div className="xo-topicchips" style={{ marginBottom: 0 }}>

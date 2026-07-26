@@ -1,6 +1,6 @@
 // Offline support: the app shell and CDN libraries are cached so the journal
 // opens without a network. Data calls (Supabase, /api) are never cached.
-const CACHE = "journal-v5";
+const CACHE = "journal-v6";
 const PRECACHE = ["/", "/index.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -51,6 +51,35 @@ self.addEventListener("fetch", (e) => {
         })
         .catch(() => hit);
       return hit || net;
+    })
+  );
+});
+
+// ---- push notifications ----
+// The server sends a JSON body; show it as a system notification.
+self.addEventListener("push", (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = { body: e.data && e.data.text() }; }
+  const title = data.title || "Journal";
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: data.url || "/" },
+      tag: data.tag,           // same tag replaces an earlier notification instead of stacking
+    })
+  );
+});
+
+// Tapping a notification focuses the app if it's open, otherwise opens it.
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ("focus" in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
     })
   );
 });
