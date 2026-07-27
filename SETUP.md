@@ -52,6 +52,7 @@ Replace with your **Project URL** and **anon/public** key from step 1.4. Save.
 | `VAPID_PRIVATE` | for reminders; see below |
 | `VAPID_SUBJECT` | for reminders; `mailto:you@example.com` |
 | `CRON_SECRET` | optional; any random word — stops outsiders poking the reminder job |
+| `ADMIN_EMAIL` | optional; your email. Unlocks a **Members** tab (owner only) showing who uses the app and how much — counts and dates only, never entry text. Leave unset to disable. |
 
 Using OpenRouter instead of Anthropic? Set `OPENROUTER_API_KEY` rather than
 `ANTHROPIC_API_KEY`. Web search works on both, through different mechanisms:

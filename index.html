@@ -1010,6 +1010,30 @@ function XOJournal() {
     };
   }, [loaded]);
 
+  // ----- owner-only member stats (who's writing, never what) -----
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminData, setAdminData] = useState(null);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const loadMembers = async () => {
+    setAdminBusy(true);
+    try {
+      const token = window.__session && window.__session.access_token;
+      const r = await fetch("/api/admin", { headers: { Authorization: "Bearer " + token } });
+      if (r.ok) setAdminData(await r.json());
+    } catch (e) { /* ignore */ }
+    setAdminBusy(false);
+  };
+  // probe once on load: only the owner's account gets the Members tab
+  useEffect(() => {
+    if (!loaded) return;
+    const token = window.__session && window.__session.access_token;
+    if (!token) return;
+    fetch("/api/admin?probe=1", { headers: { Authorization: "Bearer " + token } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.admin) setIsAdmin(true); })
+      .catch(() => {});
+  }, [loaded]);
+
   // ----- welcome-back note (every open; the ↻ button re-rolls it) -----
   const genWelcome = () => {
     const vibe = buildVibeProfile(days);
@@ -2017,6 +2041,14 @@ Digest:
         .xo-sub.vibe { color: var(--body); font-style: italic; }
 
         /* ---------- KPI cards ---------- */
+        /* members / owner stats table */
+        .xo-mtable { width: 100%; border-collapse: collapse; font: 500 13px var(--bodyfont); }
+        .xo-mtable th { text-align: right; font: 600 10px var(--bodyfont); color: var(--faint); text-transform: uppercase; letter-spacing: 0.12em; padding: 0 0 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+        .xo-mtable th:first-child, .xo-mtable td.who { text-align: left; }
+        .xo-mtable td { text-align: right; padding: 12px 0; border-bottom: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+        .xo-mtable td.who { color: var(--strong); font-weight: 600; padding-right: 20px; }
+        .xo-mtable th:not(:first-child), .xo-mtable td:not(.who) { padding-left: 18px; }
+        .xo-mtable tr:last-child td { border-bottom: none; }
         .xo-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 14px 0; }
         .xo-kpi { background: linear-gradient(180deg, rgba(var(--strong-rgb), 0.02), transparent 60%), var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; transition: transform .25s, border-color .25s; }
         .xo-kpi:hover { transform: translateY(-3px); border-color: var(--dash); }
@@ -2795,6 +2827,10 @@ Digest:
             <button className={view === "notepad" ? "xo-tab on" : "xo-tab"} onClick={() => setView("notepad")}>Notepad</button>
             <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => setView("ask")}>{aiName || "Ask"}</button>
             <button className={view === "insights" ? "xo-tab on" : "xo-tab"} onClick={() => setView("insights")}>Insights</button>
+            {isAdmin && (
+              <button className={view === "members" ? "xo-tab on" : "xo-tab"}
+                onClick={() => { setView("members"); loadMembers(); }}>Members</button>
+            )}
             <button className={view === "trash" ? "xo-tab on" : "xo-tab"} onClick={() => setView("trash")}>
               Deleted{trash.length > 0 ? ` (${trash.length})` : ""}
             </button>
@@ -3086,6 +3122,53 @@ Digest:
               </div>
             </div>
           </>
+        )}
+
+        {view === "members" && isAdmin && (
+          <div className="xo-members">
+            <div className="xo-panel-row" style={{ justifyContent: "space-between", marginTop: 0 }}>
+              <p className="xo-note" style={{ margin: 0, maxWidth: 640 }}>
+                Who's using your journal and how much — <b>never what they wrote</b>. Entry text is
+                never sent here; only counts and dates.
+              </p>
+              <button className="xo-panel-btn" onClick={loadMembers} disabled={adminBusy}>
+                {adminBusy ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+
+            {adminData && adminData.totals && (
+              <div className="xo-kpis" style={{ marginTop: 14 }}>
+                <div className="xo-kpi"><h4>Members</h4><div className="val">{adminData.totals.members}</div></div>
+                <div className="xo-kpi"><h4>Active writers</h4><div className="val">{adminData.totals.active}</div></div>
+                <div className="xo-kpi"><h4>Total entries</h4><div className="val">{adminData.totals.entries}</div></div>
+                <div className="xo-kpi"><h4>Total words</h4><div className="val">{adminData.totals.words.toLocaleString()}</div></div>
+              </div>
+            )}
+
+            <div className="xo-panel" style={{ marginTop: 14, overflowX: "auto" }}>
+              {!adminData && !adminBusy && <p className="xo-note">Tap Refresh to load.</p>}
+              {adminData && adminData.members && (
+                <table className="xo-mtable">
+                  <thead>
+                    <tr><th>Member</th><th>Entries</th><th>Notes</th><th>Days</th><th>Words</th><th>Last wrote</th><th>Joined</th></tr>
+                  </thead>
+                  <tbody>
+                    {adminData.members.map((m) => (
+                      <tr key={m.email}>
+                        <td className="who">{m.email}</td>
+                        <td>{m.entries}</td>
+                        <td>{m.notes}</td>
+                        <td>{m.days}</td>
+                        <td>{m.words.toLocaleString()}</td>
+                        <td>{m.lastEntry ? prettyDate(m.lastEntry, true) : "—"}</td>
+                        <td>{m.memberSince ? new Date(m.memberSince).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         )}
 
         {view === "notepad" && (
