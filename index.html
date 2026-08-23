@@ -248,7 +248,7 @@ function Linkify({ text }) {
       {parts.map((part, i) => {
         if (!part) return null;
         if (part.match(URL_RE)) {
-          const href = part.startsWith("http") ? part : `https://${part}`;
+          const href = safeUrl(part.startsWith("http") ? part : `https://${part}`);
           return (
             <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="xo-link">
               {part}
@@ -754,13 +754,22 @@ function YearPixels({ domEmotions }) {
 }
 
 // ---------- web-search citations ----------
+// Only ever hand an http(s) URL to an href. Web-search results are attacker-
+// influenceable, and a "javascript:"/"data:" URL in an href is a click-to-run
+// XSS. Anything that isn't plain http(s) is dropped to "#".
+function safeUrl(u) {
+  try {
+    const parsed = new URL(String(u), window.location.origin);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.href : "#";
+  } catch (e) { return "#"; }
+}
 function Sources({ list }) {
   if (!Array.isArray(list) || !list.length) return null;
   return (
     <div className="xo-sources">
       <b>Sources</b>
       {list.slice(0, 6).map((s, i) => (
-        <a key={s.url || i} href={s.url} target="_blank" rel="noopener noreferrer" title={s.url}>
+        <a key={s.url || i} href={safeUrl(s.url)} target="_blank" rel="noopener noreferrer" title={s.url}>
           {i + 1}. {s.title || s.url}
         </a>
       ))}

@@ -59,6 +59,12 @@ begin
   return c;
 end $$;
 
+-- This runs as a privileged function, and it takes an arbitrary user id. Left
+-- callable by anyone, a signed-in user could bump SOMEONE ELSE's counter and
+-- lock them out of the AI. Only the server (service_role) may call it.
+revoke execute on function bump_usage(uuid, date) from public, anon, authenticated;
+grant execute on function bump_usage(uuid, date) to service_role;
+
 -- ============ push notifications ============
 
 -- One row per device that turned reminders on. `sub` is the browser's push

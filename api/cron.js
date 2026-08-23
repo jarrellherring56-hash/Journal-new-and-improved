@@ -30,12 +30,15 @@ function localParts(date, tz) {
 const asMs = (y, mo, d, h, mi) => Date.UTC(y, mo - 1, d, h, mi);
 
 module.exports = async (req, res) => {
-  // Vercel attaches CRON_SECRET (if set) as a Bearer token. Reject anything else
-  // so the endpoint can't be triggered by a random visitor.
+  // Only the trigger that knows CRON_SECRET may run this. Vercel's own cron sends
+  // it as a Bearer token; an external scheduler (e.g. cron-job.org on the free
+  // plan) can send it either as that header OR as a ?key= query param — simple
+  // pingers that can't set headers still work. A random visitor gets rejected.
   const secret = process.env.CRON_SECRET;
   if (secret) {
     const auth = String(req.headers.authorization || "");
-    if (auth !== "Bearer " + secret) return res.status(401).json({ error: "no" });
+    const key = (req.query && req.query.key) || "";
+    if (auth !== "Bearer " + secret && key !== secret) return res.status(401).json({ error: "no" });
   }
 
   const supaUrl = process.env.SUPABASE_URL;
