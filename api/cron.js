@@ -95,6 +95,24 @@ module.exports = async (req, res) => {
     const subsRes = await fetch(rest + "push_subs?select=*", { headers: H });
     const subs = subsRes.ok ? await subsRes.json() : [];
 
+    // ?debug=1 — read-only health check (no sends, no secrets returned)
+    if (req.query && req.query.debug) {
+      const dbg = { subs: subs.length, subsQueryOk: subsRes.ok, devices: [] };
+      for (const s of subs) {
+        const now = new Date();
+        const nowL = localParts(now, s.tz || "UTC");
+        const kvGet = async (key) => {
+          const r = await fetch(rest + "kv?select=value&user_id=eq." + s.user_id + "&key=eq." + encodeURIComponent(key), { headers: H });
+          const d = r.ok ? await r.json() : []; try { return d[0] ? JSON.parse(d[0].value) : null; } catch (e) { return null; }
+        };
+        const sched = (await kvGet(SCHED_KEY)) || [];
+        const upcoming = (Array.isArray(sched) ? sched : []).filter((it) => it && !it.done && it.date && it.time)
+          .map((it) => ({ title: it.title, when: it.date + " " + it.time }));
+        dbg.devices.push({ tz: s.tz, reminder_time: s.reminder_time, nowLocal: nowL.dayKey + " " + String(nowL.h).padStart(2, "0") + ":" + String(nowL.mi).padStart(2, "0"), schedCount: (Array.isArray(sched) ? sched : []).length, upcoming: upcoming.slice(0, 8) });
+      }
+      return res.status(200).json(dbg);
+    }
+
     // group subscriptions by user so we read each user's data only once
     const byUser = {};
     for (const s of subs) (byUser[s.user_id] = byUser[s.user_id] || []).push(s);
