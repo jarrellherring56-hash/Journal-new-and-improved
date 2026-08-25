@@ -230,14 +230,144 @@ const TRASH_DAYS = 30; // auto-purge after this many days
 const IMG_PREFIX = "daybook:img:";
 
 const STARTER_PROMPTS = [
+  // moments & the day
   "What's one moment from today you don't want to forget?",
-  "What's taking up the most space in your head right now?",
   "Describe today in three honest sentences.",
   "What's something small that made today better?",
-  "If tonight had a soundtrack, what would it be and why?",
+  "What's the last thing that made you laugh?",
+  "What surprised you today?",
+  "If today were a chapter title, what would it be?",
+  "What color was today, and what shade?",
+  // what's on your mind
+  "What's taking up the most space in your head right now?",
   "What are you avoiding thinking about?",
+  "What's a thought you keep circling back to?",
+  "What would you write if you knew no one would ever read it?",
+  "What's a question you've been sitting with lately?",
+  // feelings
+  "What are you feeling right now, in one word — and why that word?",
+  "Where in your body are you holding today?",
+  "What's something you're pretending not to feel?",
+  "When did you feel most like yourself today?",
+  "What drained you today, and what refilled you?",
+  // people
+  "Who was on your mind today, and what would you say to them?",
+  "Who made you feel seen recently?",
+  "Is there a conversation you keep putting off?",
+  "Who do you owe a thank-you?",
+  // wins & gratitude
+  "What's one small win from today, however tiny?",
+  "What went right that you almost didn't notice?",
+  "Name three things that are quietly good right now.",
+  "What are you grateful for that you usually take for granted?",
+  // growth & self
   "What would you tell yourself from a week ago?",
+  "What are you learning the hard way right now?",
+  "What's one thing you'd do differently if today reset?",
+  "What are you being too hard on yourself about?",
+  // the hard stuff
+  "What's weighing on you that you haven't said out loud?",
+  "What would 'enough' look like today?",
+  "What's a fear you haven't given words to yet?",
+  // hope & ahead
+  "What are you quietly hoping for?",
+  "What's one thing you're looking forward to, even a little?",
+  "What do you want to be true a year from now?",
+  "If tomorrow went well, what would happen first?",
+  // playful
+  "If tonight had a soundtrack, what would it be and why?",
+  "What would you tell a stranger about your day in one line?",
+  "What is your body asking you for right now?",
 ];
+
+// Territories a fresh prompt can explore. Paired with a random phrasing style
+// below and handed to the AI, they yield an effectively bottomless well of
+// questions — the static list above is only the offline fallback.
+const PROMPT_THEMES = [
+  "a small moment from today", "something you're quietly avoiding",
+  "a person who's been on your mind", "how your body actually feels right now",
+  "a small win or something that went right", "something you're grateful for but overlook",
+  "a fear you haven't put into words", "what you're secretly hoping for",
+  "a way you've changed lately", "something you're being too hard on yourself about",
+  "a conversation you keep putting off", "what drained you today and what refilled you",
+  "a memory that surfaced out of nowhere", "what 'enough' would look like today",
+  "something you noticed that others might've missed", "what you'd tell your past self",
+  "a decision you're sitting with", "the color or soundtrack of your day",
+  "what you need right now — not what you should do", "something you're pretending not to feel",
+  "a thread from this week you haven't resolved", "what you're looking forward to, even slightly",
+  "a pattern you've started noticing in yourself", "who made you feel seen lately",
+  "what today quietly asked of you", "an older version of yourself",
+  "what you want to be true a year from now", "a truth you'd only write if no one could read it",
+  "the last thing that genuinely made you laugh", "what's taking up the most space in your head",
+  "a boundary you know you need to set", "something you're proud of but haven't said out loud",
+];
+const PROMPT_STYLES = [
+  "phrase it as a gentle, open question", "make it short and blunt — under 10 words",
+  "anchor it in a single sense (a sound, a smell, a texture)", "frame it around a specific time of day",
+  "phrase it as an unexpected 'what if'", "make it warm and a little playful",
+  "make it quietly challenging — the kind that makes someone pause",
+  "phrase it like a wise friend asking late at night",
+];
+// One brand-new journaling question, generated fresh each time. Never repeats.
+async function genFreshPrompt() {
+  const theme = PROMPT_THEMES[Math.floor(Math.random() * PROMPT_THEMES.length)];
+  const style = PROMPT_STYLES[Math.floor(Math.random() * PROMPT_STYLES.length)];
+  const text = await callClaude(`Write ONE short journaling prompt: a single question that invites honest self-reflection. Territory to explore: ${theme}. Style: ${style}. Make it specific, human, and unexpected — not a cliche anyone has seen a hundred times, and not generic. Under 20 words. Output only the question itself — no quotes, no preamble, no markdown.`, 60);
+  return text.replace(/^["']+|["']+$/g, "").trim() || STARTER_PROMPTS[Math.floor(Math.random() * STARTER_PROMPTS.length)];
+}
+
+// The AI welcome-back note ends with a question. Rotate the KIND of question so
+// returning users get real variety instead of the same shape every time.
+const PROMPT_ANGLES = [
+  "end with a question about how a specific thread from their entries is sitting with them now",
+  "end with a gentle question that reaches for the feeling underneath what they wrote",
+  "end by asking about a specific person they mentioned",
+  "end with a question about what they're hoping for next",
+  "end by asking what small thing went right that they might have glossed over",
+  "end with a question that gently challenges an assumption they seem to be making",
+  "end by asking about something they left unfinished or unsaid",
+  "end with a curious, slightly playful question that reframes their day",
+  "end by asking what they need right now — not what they should do",
+  "end with a question that connects two different things they wrote about",
+];
+
+// Tone-matching: quietly steer warmth based on the last several days' mood.
+// Personalization the person FEELS (never told about) — no stats, no callouts.
+function recentTone(days) {
+  const keys = Object.keys(days).sort().slice(-6);
+  let v = 0, n = 0;
+  for (const k of keys) for (const en of days[k].entries || []) for (const sg of en.segments || []) {
+    const emo = (sg.emotion || "neutral").toLowerCase();
+    if (emo in VALENCE) { v += VALENCE[emo]; n++; }
+  }
+  const avg = n ? v / n : 0;
+  if (avg <= -0.7) return "They've been in a heavy stretch lately — keep the tone gentle, grounding and unhurried; do not be chirpy or push positivity, and do not point out that they've seemed down.";
+  if (avg >= 0.9) return "They've been in a bright stretch lately — you can be a little warmer and more playful, and help them hold onto what's working.";
+  return "Keep an even, warm, steady tone.";
+}
+
+// Silent engagement loop: learn which KINDS of prompts a person actually answers
+// and quietly serve more of those. Device-local, invisible — never surfaced.
+const angleStatsKey = (uid) => "daybook:angles:" + uid;
+function getAngleStats(uid) { try { return JSON.parse(localStorage.getItem(angleStatsKey(uid)) || "{}"); } catch (e) { return {}; } }
+function bumpAngle(uid, idx, field) {
+  if (uid == null || idx == null) return;
+  const s = getAngleStats(uid); const a = s[idx] || (s[idx] = { shown: 0, answered: 0 });
+  a[field] = (a[field] || 0) + 1;
+  try { localStorage.setItem(angleStatsKey(uid), JSON.stringify(s)); } catch (e) { }
+}
+function pickAngle(uid) {
+  const s = getAngleStats(uid);
+  // Laplace-smoothed answer-rate + a floor so every angle keeps getting tried.
+  const weights = PROMPT_ANGLES.map((_, i) => {
+    const a = s[i] || { shown: 0, answered: 0 };
+    return (a.answered + 1) / (a.shown + 2) + 0.15;
+  });
+  const total = weights.reduce((x, y) => x + y, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < weights.length; i++) { r -= weights[i]; if (r <= 0) return i; }
+  return Math.floor(Math.random() * PROMPT_ANGLES.length);
+}
 
 // ---------- linkify ----------
 const URL_RE = /(https?:\/\/[^\s<>"')]+|www\.[^\s<>"')]+)/gi;
@@ -620,6 +750,93 @@ function itemPlainText(item) {
   return item.text || "";
 }
 
+// Compact month-by-month mood + theme summary across ALL history. Lets the AI
+// answer time/mood questions ("when was I happiest this year?", "when was I most
+// stressed?") without needing every entry's full text in the prompt.
+function buildMoodTimeline(days) {
+  const months = {};
+  eachSegment(days, (k, entry, seg) => {
+    const ym = k.slice(0, 7);
+    const m = months[ym] || (months[ym] = { n: 0, val: 0, moods: {}, tags: {} });
+    m.n++;
+    const emo = (seg.emotion || "neutral").toLowerCase();
+    m.moods[emo] = (m.moods[emo] || 0) + 1;
+    m.val += (VALENCE[emo] || 0);
+    for (const t of segTags(seg)) m.tags[t] = (m.tags[t] || 0) + 1;
+  });
+  const topKey = (obj) => (Object.entries(obj).sort((a, b) => b[1] - a[1])[0] || ["—"])[0];
+  const topN = (obj, n) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n).map(([kk]) => kk).join("/");
+  return Object.keys(months).sort().map((ym) => {
+    const m = months[ym];
+    const avg = (m.val / m.n);
+    return `${ym}: ${m.n} notes, mostly ${topKey(m.moods)}, avg mood ${avg >= 0 ? "+" : ""}${avg.toFixed(1)}, themes: ${topN(m.tags, 3) || "—"}`;
+  }).join("\n");
+}
+
+// "On this day" — resurface what you wrote at the same point in earlier months/years.
+function onThisDay(days) {
+  const now = new Date();
+  const offsets = [
+    { label: "a month ago", d: new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()) },
+    { label: "three months ago", d: new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()) },
+    { label: "six months ago", d: new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()) },
+    { label: "a year ago", d: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()) },
+  ];
+  const out = [];
+  for (const o of offsets) {
+    const key = dayKey(o.d);
+    const day = days[key];
+    if (!day || !(day.entries || []).length) continue;
+    let text = "";
+    for (const en of day.entries) {
+      for (const sg of en.segments || []) { const t = itemPlainText(sg).trim(); if (t) { text = t; break; } }
+      if (text) break;
+    }
+    if (text) out.push({ label: o.label, key, text: text.slice(0, 220) });
+  }
+  return out;
+}
+
+// A running list of your brighter moments — segments the AI tagged with an
+// uplifting mood — newest first. This is the "wins / gratitude" feed.
+function buildWins(days) {
+  const wins = [];
+  const keys = Object.keys(days).sort().reverse();
+  for (const k of keys) {
+    for (const en of days[k].entries || []) {
+      for (const sg of en.segments || []) {
+        const emo = (sg.emotion || "").toLowerCase();
+        const txt = itemPlainText(sg).trim();
+        if (txt && (VALENCE[emo] || 0) >= 1) wins.push({ key: k, emotion: emo, text: txt.slice(0, 200) });
+      }
+    }
+    if (wins.length >= 40) break;
+  }
+  return wins;
+}
+
+// Stats for a "Wrapped" recap over the current calendar month or year.
+function periodStats(days, period) {
+  const now = new Date();
+  const prefix = period === "year" ? String(now.getFullYear()) : dayKey(now).slice(0, 7);
+  const daySet = new Set();
+  const moods = {}, tags = {};
+  let notes = 0, val = 0, valN = 0;
+  for (const k of Object.keys(days)) {
+    if (!k.startsWith(prefix)) continue;
+    for (const en of days[k].entries || []) {
+      for (const sg of en.segments || []) {
+        notes++; daySet.add(k);
+        const emo = (sg.emotion || "neutral").toLowerCase();
+        moods[emo] = (moods[emo] || 0) + 1; val += (VALENCE[emo] || 0); valN++;
+        for (const t of segTags(sg)) tags[t] = (tags[t] || 0) + 1;
+      }
+    }
+  }
+  const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n);
+  return { notes, days: daySet.size, topMoods: top(moods, 3), topTags: top(tags, 6), avgVal: valN ? val / valN : 0 };
+}
+
 // ---------- shared card styling for login + lock screens ----------
 const LG_CSS = `
   .lg-root { min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -864,6 +1081,9 @@ function XOJournal() {
   const [listening, setListening] = useState(false);
   const [recap, setRecap] = useState("");
   const [recapBusy, setRecapBusy] = useState(false);
+  const [wrapped, setWrapped] = useState(null);
+  const [wrappedBusy, setWrappedBusy] = useState(false);
+  const [wrapPeriod, setWrapPeriod] = useState("month");
   const [welcome, setWelcome] = useState("");
   const [welcomeBusy, setWelcomeBusy] = useState(false);
   const [goals, setGoals] = useState([]);
@@ -874,6 +1094,7 @@ function XOJournal() {
   const fileRef = useRef(null);
   const recRef = useRef(null);
   const promptRequested = useRef(false);
+  const shownAngleRef = useRef(null); // which prompt angle is on screen, for the silent learn-loop
 
   // ----- initial load -----
   const pullCloud = useRef(null);
@@ -1047,7 +1268,14 @@ function XOJournal() {
   const genWelcome = () => {
     const vibe = buildVibeProfile(days);
     if (vibe.count === 0) {
-      setWelcome(STARTER_PROMPTS[Math.floor(Math.random() * STARTER_PROMPTS.length)]);
+      // No entries yet to riff on — generate a fresh, never-repeating prompt.
+      // Falls back to the static list if the AI is unreachable (offline).
+      setWelcomeBusy(true);
+      (async () => {
+        try { setWelcome(await genFreshPrompt()); }
+        catch (e) { setWelcome(STARTER_PROMPTS[Math.floor(Math.random() * STARTER_PROMPTS.length)]); }
+        finally { setWelcomeBusy(false); }
+      })();
       return;
     }
     // how long they've been away
@@ -1062,13 +1290,37 @@ function XOJournal() {
       awayText = daysAway <= 1 ? "since yesterday" : `for ${daysAway} days`;
     }
     const digest = buildDigest(days, 5);
+    const tone = recentTone(days);
+
+    // Follow up on things THEY chose to put in the app — goals + calendar.
+    // Only their own words/plans, never inferred behaviour.
+    const ctxBits = [];
+    const soonKey = dayKey(new Date(Date.now() + 2 * 86400000));
+    const pastKey = dayKey(new Date(Date.now() - 3 * 86400000));
+    const justHad = (sched || []).filter((s) => s.date && s.date < today && s.date >= pastKey).map((s) => s.title).filter(Boolean);
+    const comingUp = (sched || []).filter((s) => s.date && s.date >= today && s.date <= soonKey && !s.done)
+      .map((s) => s.title + (s.date === today ? " (today)" : "")).filter(Boolean);
+    const activeGoals = (goals || []).filter((g) => !g.done && g.text).slice(0, 3).map((g) => g.text);
+    if (justHad.length) ctxBits.push("On their calendar just now: " + justHad.join("; ") + " — you may gently ask how it went.");
+    if (comingUp.length) ctxBits.push("Coming up for them: " + comingUp.join("; ") + " — you may ask how they're feeling going in.");
+    if (activeGoals.length) ctxBits.push("Goals they set for themselves: " + activeGoals.join("; ") + ".");
+    const focus = Array.isArray(settings.focus) && settings.focus.length
+      ? `They've asked you to nudge them on: ${settings.focus.join(", ")}. Lean that way if it fits naturally — never force it.` : "";
+
+    const userId = (window.__session && window.__session.user && window.__session.user.id) || "local";
+    const angleIdx = pickAngle(userId);
+    shownAngleRef.current = angleIdx;
+    bumpAngle(userId, angleIdx, "shown");
+
     setWelcomeBusy(true);
     (async () => {
       try {
-        const q = await callClaude(`You are the AI living inside someone's private journal. They just opened it back up — they've been away ${awayText}, and you've been sitting with their recent entries in the meantime. Below is a digest of what they last wrote (dates, topic labels, snippets).
+        const q = await callClaude(`You are the AI living inside someone's private journal. They just opened it back up — they've been away ${awayText}, and you've been sitting with their recent entries in the meantime.
 
-Write them a short note (2-3 sentences, 30-70 words total) that shows you were genuinely thinking about their entries while they were gone: reference one or two SPECIFIC things they actually wrote about (name the thing — the trade, the person, the memory — not just the topic label), notice a thread or mood if you see one, and end with ONE question that invites them to pick the thread back up. Warm, cool, late-night tone. Speak directly to them. No markdown, no emoji, no quotes, no greeting like "hey" or "welcome back".
+TONE: ${tone}
 
+Write them a short note (2-3 sentences, 30-70 words total) that shows you were genuinely thinking about what they wrote: reference one or two SPECIFIC things they actually wrote about (name the real thing — the trade, the person, the memory — and use their own words where you can, not just a topic label), pick up a thread they left open if there is one, and then ${PROMPT_ANGLES[angleIdx]}. Ask only ONE question, specific to them — never generic. Only ever reference things they actually wrote or planned; never guess at feelings they didn't express or point out patterns like a data report. Speak directly to them. No markdown, no emoji, no quotes, no greeting like "hey" or "welcome back".
+${ctxBits.length ? "\nThings they've told the app (safe to reference):\n" + ctxBits.join("\n") + "\n" : ""}${focus ? "\n" + focus + "\n" : ""}
 Their recent entries:
 """${digest}"""
 
@@ -1209,6 +1461,12 @@ Their week:
   const addEntry = async () => {
     const text = draft.trim();
     if ((!text && !pendingImgs.length) || busy) return;
+    // silent learn-loop: they wrote after seeing a prompt — credit that prompt's kind
+    if (text && shownAngleRef.current != null) {
+      const userId = (window.__session && window.__session.user && window.__session.user.id) || "local";
+      bumpAngle(userId, shownAngleRef.current, "answered");
+      shownAngleRef.current = null;
+    }
     setBusy(true); setBusyMode("entry"); setError("");
     try {
       const time = nowTime();
@@ -1303,6 +1561,9 @@ Their week:
 
 Conversation so far:
 ${history || "(first question)"}
+
+Month-by-month mood timeline across their whole history (use this for "when" / "happiest" / "most stressed" / trend questions):
+"""${buildMoodTimeline(days) || "no entries yet"}"""
 
 Notes matching their question:
 """${relevant || "none found"}"""
@@ -1632,6 +1893,26 @@ Digest:
       segments: [{ id: uid(), type: "recap", text: recap, topic: "Vibe Recap", emotion: "calm", time }],
     });
     setRecap("");
+  };
+
+  // ----- Wrapped: a shareable month/year in review -----
+  const genWrapped = async (period) => {
+    if (wrappedBusy) return;
+    setWrappedBusy(true); setError("");
+    const stats = periodStats(days, period);
+    try {
+      const label = period === "year" ? String(new Date().getFullYear()) : new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      const digest = buildDigest(days, period === "year" ? 366 : 40);
+      const headline = await withRetry(() => callClaude(`You are the AI inside someone's personal journal, writing their "${label} in review" card. Below is a digest of what they wrote this ${period}. In 40-70 words, warm and specific, capture the emotional story of their ${period}: name a real thread or two they actually wrote about, how their mood moved, and one honest, encouraging closing line. Speak to them directly ("you"). No markdown, no lists, no emoji, no quotes.
+
+Digest:
+"""${digest || "very little written"}"""`, 400));
+      setWrapped({ period, label, stats, headline });
+    } catch (e) {
+      setWrapped({ period, label: period === "year" ? String(new Date().getFullYear()) : "This month", stats, headline: "" });
+    } finally {
+      setWrappedBusy(false);
+    }
   };
 
   // ----- full backup + import (move data between versions/accounts) -----
@@ -2105,6 +2386,29 @@ Digest:
         .xo-callegend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 
         .xo-recapbox { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: rgba(var(--accent-rgb), 0.07); border: 1px solid rgba(var(--accent-rgb), 0.25); color: var(--body); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
+        /* wrapped recap card */
+        .xo-wrapped { margin-top: 16px; padding: 22px; border-radius: 18px; border: 1px solid rgba(var(--accent-rgb), 0.35);
+          background: linear-gradient(160deg, rgba(var(--accent-rgb), 0.14), rgba(var(--accent-rgb), 0.03) 70%), var(--card); }
+        .xo-wrapped-label { font: 600 12px var(--bodyfont); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+        .xo-wrapped-stats { display: flex; gap: 22px; margin-bottom: 16px; }
+        .xo-wrapped-stats div { display: flex; flex-direction: column; }
+        .xo-wrapped-stats b { font: 700 30px var(--dispfont, var(--bodyfont)); color: var(--ink); line-height: 1; }
+        .xo-wrapped-stats span { font: 500 10px var(--bodyfont); letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); margin-top: 5px; }
+        .xo-wrapped-note { font-size: 14px; line-height: 1.6; color: var(--body); margin-bottom: 14px; }
+        .xo-wrapped-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+        .xo-wrapped-tags span { font: 500 11.5px var(--bodyfont); color: var(--accent); padding: 4px 11px; border-radius: 99px; border: 1px solid rgba(var(--accent-rgb), 0.3); }
+        .xo-wrapped-brand { display: flex; align-items: center; gap: 8px; font: 600 12px var(--bodyfont); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+        .xo-wrapped-brand .dot { width: 8px; height: 8px; border-radius: 99px; background: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.7); }
+        /* on this day + wins */
+        .xo-memory { padding: 10px 0; border-bottom: 1px solid var(--line); }
+        .xo-memory:last-child { border-bottom: none; }
+        .xo-memory b { display: block; font: 600 10px var(--bodyfont); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 5px; }
+        .xo-memory p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--body); }
+        .xo-wins { display: flex; flex-direction: column; gap: 11px; }
+        .xo-win { display: flex; gap: 10px; }
+        .xo-win .wdot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 99px; margin-top: 6px; }
+        .xo-win p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--body); }
+        .xo-win span { font: 500 10.5px var(--bodyfont); color: var(--faint); }
 
         .xo-promptcard { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 14px; padding: 14px 18px; margin: 0 0 14px; color: var(--body); font-size: 13.5px; line-height: 1.6; transition: transform .2s; }
         .xo-promptcard:hover { transform: translateX(3px); }
@@ -2930,6 +3234,24 @@ Digest:
               info — never for sorting entries or recaps. Answers come with their sources. About a cent per search.
             </p>
 
+            <label style={{ marginTop: 14 }}>What should your prompts nudge you on?</label>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+              {["Relationships", "Work", "Health", "Creativity", "Growth", "Money"].map((area) => {
+                const cur = Array.isArray(settings.focus) ? settings.focus : [];
+                const on = cur.includes(area);
+                return (
+                  <button key={area}
+                    className={on ? "xo-topicchip on" : "xo-topicchip"}
+                    onClick={() => updateSettings({ focus: on ? cur.filter((a) => a !== area) : [...cur, area] })}>
+                    {area}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="xo-note" style={{ marginTop: 8 }}>
+              Optional. Your prompts lean toward what you pick — only when it fits naturally. Leave all off to keep them wide open.
+            </p>
+
             {allTagRows.length > 0 && (
               <>
                 <label style={{ marginTop: 14 }}>Tags — {allTagRows.length} in use ({favTags.length} favourite{favTags.length === 1 ? "" : "s"})</label>
@@ -3095,6 +3417,35 @@ Digest:
                 {recap && <div className="xo-recapbox">{recap}</div>}
               </div>
               <div className="xo-panel">
+                <h3>Your {wrapPeriod === "year" ? "year" : "month"} in review</h3>
+                <p className="xo-note" style={{ marginBottom: 12 }}>A recap card — your top moods, themes, and an AI-written highlight. Screenshot it to share.</p>
+                <div className="xo-topicchips" style={{ marginBottom: 12 }}>
+                  {[["month", "This month"], ["year", "This year"]].map(([v, l]) => (
+                    <button key={v} className={wrapPeriod === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => setWrapPeriod(v)}>{l}</button>
+                  ))}
+                </div>
+                <button className="xo-panel-btn" onClick={() => genWrapped(wrapPeriod)} disabled={wrappedBusy || !hasEntries}>
+                  {wrappedBusy ? "Wrapping it up…" : "Generate my " + (wrapPeriod === "year" ? "year" : "month")}
+                </button>
+                {wrapped && (
+                  <div className="xo-wrapped">
+                    <div className="xo-wrapped-label">{wrapped.label}</div>
+                    <div className="xo-wrapped-stats">
+                      <div><b>{wrapped.stats.notes}</b><span>notes</span></div>
+                      <div><b>{wrapped.stats.days}</b><span>days</span></div>
+                      <div><b>{wrapped.stats.topMoods[0] ? emotionOf(wrapped.stats.topMoods[0][0]).label : "—"}</b><span>top mood</span></div>
+                    </div>
+                    {wrapped.headline && <div className="xo-wrapped-note">{wrapped.headline}</div>}
+                    {wrapped.stats.topTags.length > 0 && (
+                      <div className="xo-wrapped-tags">
+                        {wrapped.stats.topTags.map(([t]) => <span key={t}>{t}</span>)}
+                      </div>
+                    )}
+                    <div className="xo-wrapped-brand"><span className="dot" />Journal</div>
+                  </div>
+                )}
+              </div>
+              <div className="xo-panel">
                 <h3>Mood trend — last 30 days</h3>
                 <MoodTrend days={days} />
               </div>
@@ -3105,6 +3456,36 @@ Digest:
               </div>
               </div>
               <div className="xo-side">
+                {(() => {
+                  const memories = onThisDay(days);
+                  return memories.length > 0 ? (
+                    <div className="xo-panel">
+                      <h3>On this day</h3>
+                      {memories.map((m) => (
+                        <div className="xo-memory" key={m.label}>
+                          <b>{m.label}</b>
+                          <p>{m.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
+                {(() => {
+                  const wins = buildWins(days);
+                  return wins.length > 0 ? (
+                    <div className="xo-panel">
+                      <h3>Wins & bright spots</h3>
+                      <div className="xo-wins">
+                        {wins.slice(0, 12).map((w, i) => (
+                          <div className="xo-win" key={i}>
+                            <span className="wdot" style={{ background: emotionOf(w.emotion).dot }} />
+                            <div><p>{w.text}</p><span>{prettyDate(w.key, true)}</span></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
                 <div className="xo-panel">
                   <h3>Mood — last 5 weeks</h3>
                   <div className="xo-minical">
