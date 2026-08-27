@@ -48,12 +48,18 @@ workflows:
         script: |
           set -e
           keychain initialize
-          # creates the distribution certificate AND an App Store provisioning
-          # profile for this bundle id if they don't exist yet (--create)
+          # 1) create a fresh iOS Distribution certificate WITH a new private key
+          #    (the account has none yet; --save writes cert+key for the keychain)
+          app-store-connect create-certificate \
+            --type IOS_DISTRIBUTION \
+            --save
+          # 2) load that cert+key into the build keychain
+          keychain add-certificates
+          # 3) create the App Store provisioning profile for this bundle id
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create
-          keychain add-certificates
+          # 4) point the Xcode project at the fetched profile
           xcode-project use-profiles
       - name: Build the iOS app (.ipa)
         script: |
