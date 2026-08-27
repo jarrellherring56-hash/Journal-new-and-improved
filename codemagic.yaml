@@ -4,13 +4,10 @@
 # and uploads it to TestFlight. The web app itself stays on Vercel — this only
 # ships the native shell that bundles it.
 #
-# BEFORE THE FIRST BUILD, do two Apple things in the Codemagic UI (they use your
-# Apple secrets, so they can't live in this file):
-#   1. Settings -> Team integrations -> App Store Connect: add an API key and
-#      name it exactly  journal-asc-key  (matches the reference below).
-#   2. In App Store Connect, create the app record with bundle id
-#      com.jarrellherring.journal  (name: Journal). Automatic signing below then
-#      creates the signing profiles for you.
+# Signing is fully automatic: the App Store Connect API key (added in Codemagic
+# as the "journal-asc-key" integration) is used to CREATE the distribution
+# certificate and provisioning profile on the first build, so you never touch
+# Xcode signing by hand.
 #
 # NOTE ON PUSH: this pipeline builds and ships the app. Turning on the APNs
 # entitlement (aps-environment) is a one-time capability toggle done after the
@@ -23,14 +20,17 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: journal-asc-key   # <-- must match the API key name you add in Codemagic
+      app_store_connect: journal-asc-key   # must match the API key name added in Codemagic
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.jarrellherring.journal
+      # NOTE: no `ios_signing` block on purpose — that one only fetches an
+      # EXISTING profile and fails the build before scripts run. Signing is
+      # handled below by `fetch-signing-files --create`, which makes the cert
+      # and profile automatically on first run.
       node: 20
       xcode: latest
       cocoapods: default
+      vars:
+        BUNDLE_ID: "com.jarrellherring.journal"
     scripts:
       - name: Install Capacitor deps & generate the iOS project
         script: |
@@ -44,8 +44,16 @@ workflows:
           set -e
           cd mobile/ios/App
           pod install
-      - name: Set up code signing profiles
+      - name: Set up code signing (auto-create cert + profile)
         script: |
+          set -e
+          keychain initialize
+          # creates the distribution certificate AND an App Store provisioning
+          # profile for this bundle id if they don't exist yet (--create)
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
           xcode-project use-profiles
       - name: Build the iOS app (.ipa)
         script: |
