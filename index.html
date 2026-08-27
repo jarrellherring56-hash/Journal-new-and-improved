@@ -105,8 +105,41 @@ const pushSupported = () =>
   "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 
 // Subscribe this device and tell the server (endpoint + timezone + nudge time).
+// Running inside the native iOS app (Capacitor) rather than a browser/PWA?
+const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+// Ask iOS for permission and get an APNs device token via the Capacitor plugin.
+async function nativePushToken() {
+  const PN = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+  if (!PN) return { error: "Notifications aren't available in this build." };
+  const perm = await PN.requestPermissions();
+  if (perm.receive !== "granted") return { error: "Notifications are off — turn them on in Settings → Journal → Notifications." };
+  return await new Promise((resolve) => {
+    let done = false;
+    PN.addListener("registration", (t) => { if (!done) { done = true; try { localStorage.setItem("daybook:apns", t.value); } catch (e) {} resolve({ token: t.value }); } });
+    PN.addListener("registrationError", () => { if (!done) { done = true; resolve({ error: "Couldn't register this device for notifications." }); } });
+    PN.register();
+    setTimeout(() => { if (!done) { done = true; resolve({ error: "Notification registration timed out — try again." }); } }, 15000);
+  });
+}
+
 // Returns an error string, or "" on success.
 async function enablePush(reminderTime) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const token = window.__session && window.__session.access_token;
+  const save = async (subscription) => {
+    const r = await fetch(API_BASE + "/api/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ subscription, tz, reminderTime }),
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); return d.error || "Could not turn on reminders."; }
+    return "";
+  };
+  if (isNativeApp()) {
+    const res = await nativePushToken();
+    if (res.error) return res.error;
+    return await save({ endpoint: res.token, platform: "ios", token: res.token });
+  }
   if (!pushSupported()) return "This device can't do notifications. On iPhone, add the app to your Home Screen first.";
   const perm = await Notification.requestPermission();
   if (perm === "denied") return "Notifications are blocked — allow them in your phone/browser settings.";
@@ -119,30 +152,25 @@ async function enablePush(reminderTime) {
       applicationServerKey: urlB64ToUint8(VAPID_PUBLIC),
     });
   }
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const token = window.__session && window.__session.access_token;
-  const r = await fetch(API_BASE + "/api/push", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-    body: JSON.stringify({ subscription: sub, tz, reminderTime }),
-  });
-  if (!r.ok) { const d = await r.json().catch(() => ({})); return d.error || "Could not turn on reminders."; }
-  return "";
+  return await save(sub);
 }
 
 async function disablePush() {
+  const token = window.__session && window.__session.access_token;
+  const del = (subscription) => fetch(API_BASE + "/api/push", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ subscription }),
+  }).catch(() => {});
   try {
+    if (isNativeApp()) {
+      let t = ""; try { t = localStorage.getItem("daybook:apns") || ""; } catch (e) {}
+      if (t) await del({ endpoint: t });
+      return;
+    }
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
-    if (sub) {
-      const token = window.__session && window.__session.access_token;
-      await fetch(API_BASE + "/api/push", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-        body: JSON.stringify({ subscription: sub }),
-      }).catch(() => {});
-      await sub.unsubscribe().catch(() => {});
-    }
+    if (sub) { await del(sub); await sub.unsubscribe().catch(() => {}); }
   } catch (e) { /* best effort */ }
 }
 
@@ -1331,7 +1359,13 @@ function XOJournal() {
   useEffect(() => {
     if (!loaded || autoPushRef.current) return;
     autoPushRef.current = true;
-    if (!settings.remindersOn || !pushSupported()) return;
+    if (!settings.remindersOn) return;
+    // Native iOS app: register through APNs (no service worker, no gesture rule).
+    if (isNativeApp()) {
+      enablePush(settings.reminderTime || "20:00").then((err) => { if (err) setPushMsg(err); });
+      return;
+    }
+    if (!pushSupported()) return;
     if (Notification.permission === "denied") return;
     if (Notification.permission === "granted") {
       enablePush(settings.reminderTime || "20:00"); // already allowed: silent re-register

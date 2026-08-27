@@ -3,9 +3,60 @@
 // right now in the device's own timezone, and sends a push. A small log table
 // guarantees each reminder fires exactly once.
 const webpush = require("web-push");
+const crypto = require("crypto");
+const http2 = require("http2");
 
 const STORAGE_KEY = "daybook:days:v1";
 const SCHED_KEY = "daybook:schedule:v1";
+
+// ---- Apple Push Notification service (native iOS app) ----
+// The native app registers an APNs device token instead of a web-push
+// subscription; those go through APNs here. Credentials come from a .p8 auth
+// key made in the Apple Developer portal — set the env vars once you have it.
+// Until then, native sends no-op gracefully and web push is unaffected.
+let _apnsJwt = null, _apnsJwtAt = 0;
+function apnsJwt() {
+  const key = process.env.APNS_KEY, kid = process.env.APNS_KEY_ID, iss = process.env.APNS_TEAM_ID;
+  if (!key || !kid || !iss) return null;
+  if (_apnsJwt && Date.now() - _apnsJwtAt < 50 * 60000) return _apnsJwt; // APNs tokens last ~60 min
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const signingInput = b64({ alg: "ES256", kid }) + "." + b64({ iss, iat: Math.floor(Date.now() / 1000) });
+  const sig = crypto.sign("sha256", Buffer.from(signingInput),
+    { key: key.replace(/\\n/g, "\n"), dsaEncoding: "ieee-p1363" }).toString("base64url");
+  _apnsJwt = signingInput + "." + sig; _apnsJwtAt = Date.now();
+  return _apnsJwt;
+}
+function sendApns(token, payload) {
+  return new Promise((resolve, reject) => {
+    const jwt = apnsJwt();
+    if (!jwt) return reject(Object.assign(new Error("APNs not configured"), { statusCode: 500 }));
+    const host = String(process.env.APNS_PRODUCTION || "").toLowerCase() === "true"
+      ? "https://api.push.apple.com" : "https://api.sandbox.push.apple.com";
+    const body = JSON.stringify({ aps: { alert: { title: payload.title, body: payload.body }, sound: "default" } });
+    const client = http2.connect(host);
+    let done = false;
+    const fail = (e) => { if (done) return; done = true; try { client.close(); } catch (x) {} reject(e); };
+    client.on("error", fail);
+    const req = client.request({
+      ":method": "POST", ":path": "/3/device/" + token,
+      "authorization": "bearer " + jwt,
+      "apns-topic": process.env.APNS_BUNDLE_ID || "",
+      "apns-push-type": "alert", "content-type": "application/json",
+    });
+    let status = 0, data = "";
+    req.on("response", (h) => { status = h[":status"]; });
+    req.on("data", (d) => { data += d; });
+    req.on("end", () => {
+      if (done) return; done = true; try { client.close(); } catch (x) {}
+      if (status === 200) resolve();
+      else reject(Object.assign(new Error("APNs " + status + " " + data), { statusCode: status }));
+    });
+    req.on("error", fail);
+    req.write(body); req.end();
+  });
+}
+// A native sub is stored as { platform:"ios", token, endpoint:token }.
+const isNativeSub = (sub) => sub && (sub.platform === "ios" || (sub.token && !sub.keys));
 
 // How far ahead we nudge, and how far back we still catch a missed run (minutes).
 const LEAD_MIN = 5;   // a 3:00 item fires at the ~2:55 run — a few minutes' warning
@@ -73,10 +124,13 @@ module.exports = async (req, res) => {
       fetch(rest + "push_log?user_id=eq." + userId + "&tag=eq." + encodeURIComponent(tag),
         { method: "DELETE", headers: H }).catch(() => {});
     try {
-      await webpush.sendNotification(sub, JSON.stringify(payload));
+      if (isNativeSub(sub)) await sendApns(sub.token || sub.endpoint, payload);
+      else await webpush.sendNotification(sub, JSON.stringify(payload));
       sent++;
     } catch (err) {
-      if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+      const code = err && err.statusCode;
+      // web-push: 404/410 gone. APNs: 410 Unregistered / 400 BadDeviceToken.
+      if (code === 404 || code === 410 || code === 400) {
         // subscription is permanently gone — drop it, don't retry a dead endpoint
         await fetch(rest + "push_subs?endpoint=eq." + encodeURIComponent(sub.endpoint),
           { method: "DELETE", headers: H }).catch(() => {});

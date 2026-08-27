@@ -16,9 +16,37 @@ The app changes Apple *requires* are built and in this repo:
 ## Honest realities (read this)
 1. **You need a Mac at the final step.** Building/signing/submitting an iOS app requires macOS + Xcode. Since you're on Windows, use a **cloud Mac** (Codemagic free tier, or MacinCloud ~$1/hr) or borrow a Mac. There is no Windows-only path to the App Store.
 2. **Apple Developer Program: $99/year** (you're buying it tomorrow).
-3. **Notifications won't work in the native app out of the box.** Web push doesn't carry into a native wrapper — the App Store version needs **native push (APNs)**, which is a separate build (register an APNs token, store it, and have the cron send via APNs instead of web-push). Your PWA/home-screen users keep getting reminders as they do now. Tell me and I'll add native push as a follow-up.
+3. **Native notifications (APNs) are now BUILT** — the app registers an APNs token in the native build and the cron sends through Apple's push service (web/PWA users still get web push, unchanged). It just needs Apple credentials — see "Native push setup" below.
 4. **Subscriptions must use Apple's In-App Purchase** if you charge inside the iOS app — Apple takes 15–30% and forbids Stripe for digital subscriptions. (You have no billing yet, so decide before you add it.)
 5. **Rejection risk (Guideline 4.2):** Apple rejects apps that are "just a wrapped website." Bundling the app (below) plus your offline shell, real features, and account system helps you pass, but it's a real risk on a first review.
+
+---
+
+## Native push setup (APNs) — for iOS reminders
+
+The code is built. To turn it on, create an Apple push key and add five env vars.
+
+**1. Create the APNs key (Apple Developer portal):**
+- developer.apple.com → **Certificates, Identifiers & Profiles → Keys → +**.
+- Name it "Journal APNs", tick **Apple Push Notifications service (APNs)**, Continue → Register.
+- **Download the `.p8` file** (you only get to download it once) and note the **Key ID** shown.
+- Note your **Team ID** (top-right of the portal, or Membership page).
+
+**2. Enable Push in Xcode:** target → **Signing & Capabilities → + Capability → Push Notifications**. (Also add **Background Modes → Remote notifications** if you want silent delivery.)
+
+**3. Add these env vars in Vercel** (Settings → Environment Variables):
+
+| Name | Value |
+|---|---|
+| `APNS_KEY` | 🔒 the entire contents of the `.p8` file (paste it, `-----BEGIN…` through `-----END…`) |
+| `APNS_KEY_ID` | the Key ID from step 1 |
+| `APNS_TEAM_ID` | your Team ID |
+| `APNS_BUNDLE_ID` | your app's Bundle ID (e.g. `com.jarrellherring.journal`) |
+| `APNS_PRODUCTION` | `false` while testing from Xcode (sandbox); **`true` for TestFlight and the App Store** (they use production APNs) |
+
+**4. Redeploy** so the cron picks up the vars. Then reminders fire on the native app exactly like the web — through the same cron-job.org pinger, no extra service.
+
+> Getting "BadDeviceToken"? It almost always means `APNS_PRODUCTION` doesn't match the build: Xcode-run builds are **sandbox** (`false`), TestFlight/App Store are **production** (`true`).
 
 ---
 
