@@ -1,0 +1,9 @@
+{
+  "appId": "com.jarrellherring.journal",
+  "appName": "Journal",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#0a0b0e"
+  }
+}

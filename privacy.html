@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal — Privacy Policy</title>
+<style>
+  body { margin: 0; background: #0a0b0e; color: #d7dedc; font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.65; padding: 40px 20px 80px; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-family: 'Space Grotesk', system-ui, sans-serif; color: #f4f6f5; font-size: 30px; letter-spacing: -.02em; }
+  h2 { font-family: 'Space Grotesk', system-ui, sans-serif; color: #f4f6f5; font-size: 19px; margin-top: 34px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #35e0c0; box-shadow: 0 0 12px rgba(53,224,192,.7); margin-right: 8px; }
+  .updated { color: #6e7a77; font-size: 13px; }
+  a { color: #35e0c0; }
+  strong { color: #f4f6f5; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="dot"></span>Journal — Privacy Policy</h1>
+  <p class="updated">Last updated: August 2026</p>
+
+  <p>Journal is a private journaling app. This policy explains, in plain language, what we collect, how it's used, and the choices you have. We've tried to be honest rather than reassuring.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><strong>Your account</strong> — the email address and password you sign up with.</li>
+    <li><strong>What you write</strong> — your journal entries, notes, schedule items, goals, and any photos you add.</li>
+    <li><strong>Derived data</strong> — mood/emotion labels and topic tags the app generates from your entries.</li>
+    <li><strong>Notification data</strong> — if you turn on reminders, a device push token and your timezone.</li>
+  </ul>
+  <p>We do <strong>not</strong> collect location, contacts, or advertising identifiers, and there are no third-party ad or analytics trackers in the app.</p>
+
+  <h2>How your data is used</h2>
+  <ul>
+    <li>To store and sync your journal across your devices when you sign in.</li>
+    <li>To power the AI features — your entry text is sent to our AI provider to generate mood tags, recaps, and answers when you ask.</li>
+    <li>To send the reminders you turn on.</li>
+  </ul>
+
+  <h2>Who can access it — honestly</h2>
+  <ul>
+    <li><strong>Other users cannot.</strong> Each account's entries are locked to that account by database Row-Level Security — the database itself refuses cross-user reads.</li>
+    <li><strong>Your entries are encrypted in transit (HTTPS) and at rest</strong> on our database provider.</li>
+    <li><strong>The app is not end-to-end encrypted.</strong> Because the AI reads your entries to tag moods and answer questions, the operator and our infrastructure providers can technically access your data. We do not read it for any purpose other than running the service, and we never sell it.</li>
+    <li><strong>AI processing:</strong> when the AI runs, your entry text is sent to a third-party model provider (OpenRouter, routing to the model in use) solely to return the result. We do not permit that data to be used to train models.</li>
+  </ul>
+
+  <h2>Sharing</h2>
+  <p>We do not sell your data and we do not share it with advertisers. Data is processed only by the infrastructure providers needed to run the app: our hosting provider (Vercel), our database and authentication provider (Supabase), and our AI provider (OpenRouter). Anything you choose to share from the app — a "Wrapped" card, a streak, a line you tap "share" on — leaves the app only when you deliberately share it.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li><strong>Export</strong> — you can export a full backup of your journal at any time from the app's settings.</li>
+    <li><strong>Delete</strong> — you can permanently delete your account and all associated data from inside the app (Customize → Delete account). This removes your entries and your login and cannot be undone.</li>
+  </ul>
+
+  <h2>Data retention</h2>
+  <p>We keep your data for as long as your account exists. When you delete your account, your data is removed from our database. Backups held by our infrastructure providers may persist for a short period before being overwritten.</p>
+
+  <h2>Children</h2>
+  <p>Journal is not directed to children under 13, and we do not knowingly collect data from them.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes materially, we'll update the date above and, where appropriate, notify you in the app.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about your privacy or this policy: <a href="mailto:aijournalsupport@gmail.com">aijournalsupport@gmail.com</a></p>
+</main>
+</body>
+</html>

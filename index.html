@@ -20,6 +20,10 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Public half of the push keypair — safe to ship in the browser. The private half
 // lives only in Vercel (VAPID_PRIVATE). Regenerate both together if you ever rotate.
 const VAPID_PUBLIC = "BHgR9puns5NbJjWz9m0zyOxPEee8Nd7mC8uH_QLnXG29cfVWp_M71_1-PivRfRymV6i5qu98cg1R22IOLwSF-RA";
+// On the web, the page is served from the same origin as the /api functions, so
+// calls stay relative. Wrapped as a native app (Capacitor), the page loads from
+// capacitor://localhost, so API calls need the absolute Vercel origin.
+const API_BASE = location.protocol.startsWith("http") ? "" : "https://journal-new-and-improved.vercel.app";
 </script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -117,7 +121,7 @@ async function enablePush(reminderTime) {
   }
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const token = window.__session && window.__session.access_token;
-  const r = await fetch("/api/push", {
+  const r = await fetch(API_BASE + "/api/push", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
     body: JSON.stringify({ subscription: sub, tz, reminderTime }),
@@ -132,7 +136,7 @@ async function disablePush() {
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
       const token = window.__session && window.__session.access_token;
-      await fetch("/api/push", {
+      await fetch(API_BASE + "/api/push", {
         method: "DELETE",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
         body: JSON.stringify({ subscription: sub }),
@@ -480,7 +484,7 @@ function extractJSONObject(raw) {
 // only the question-answering paths request it, never the tagging/recap ones).
 async function callClaudeRaw(prompt, maxTokens = 1000, web = false) {
   const token = window.__session && window.__session.access_token;
-  const response = await fetch("/api/ai", {
+  const response = await fetch(API_BASE + "/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
     body: JSON.stringify({ prompt, max_tokens: maxTokens, web }),
@@ -837,6 +841,111 @@ function periodStats(days, period) {
   return { notes, days: daySet.size, topMoods: top(moods, 3), topTags: top(tags, 6), avgVal: valN ? val / valN : 0 };
 }
 
+// ================= shareable cards (the product markets itself) =================
+// Renders a branded 1080x1350 card on a <canvas> — no libraries, no tainting.
+// Shares are PRIVACY-SAFE: stats/mood cards carry no entry text; a quote card is
+// only ever made from a line the user explicitly chose to share.
+const CARD_ACCENT = "#35E0C0";
+function wrapLines(ctx, text, maxW) {
+  const words = String(text).split(/\s+/);
+  const lines = []; let line = "";
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+async function buildShareCard(opts) {
+  const W = 1080, H = 1350, PAD = 96;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  try { await document.fonts.ready; } catch (e) { }
+  // ground + glow
+  x.fillStyle = "#0A0B0E"; x.fillRect(0, 0, W, H);
+  const g = x.createRadialGradient(W * 0.82, H * 0.14, 0, W * 0.82, H * 0.14, 760);
+  g.addColorStop(0, "rgba(53,224,192,0.18)"); g.addColorStop(1, "rgba(53,224,192,0)");
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  // brand row (top)
+  x.fillStyle = CARD_ACCENT; x.beginPath(); x.arc(PAD + 8, 132, 9, 0, Math.PI * 2); x.fill();
+  x.shadowColor = "rgba(53,224,192,0.7)"; x.shadowBlur = 18; x.beginPath(); x.arc(PAD + 8, 132, 9, 0, Math.PI * 2); x.fill(); x.shadowBlur = 0;
+  x.font = "600 24px 'Space Grotesk', system-ui, sans-serif"; x.fillStyle = "#9BE9D8";
+  x.save(); x.translate(PAD + 34, 140);
+  for (const ch of "JOURNAL") { x.fillText(ch, 0, 0); x.translate(x.measureText(ch).width + 7, 0); }
+  x.restore();
+
+  let y = 300;
+  if (opts.label) {
+    x.font = "600 26px 'Space Grotesk', system-ui, sans-serif"; x.fillStyle = CARD_ACCENT;
+    x.save(); x.translate(PAD, y);
+    for (const ch of opts.label.toUpperCase()) { x.fillText(ch, 0, 0); x.translate(x.measureText(ch).width + 5, 0); }
+    x.restore(); y += 54;
+  }
+  if (opts.title) {
+    x.font = "700 64px 'Space Grotesk', system-ui, sans-serif"; x.fillStyle = "#F4F6F5";
+    x.fillText(opts.title, PAD, y + 40); y += 108;
+  }
+  // stats row (Wrapped/streak) — numbers only, no text from entries
+  if (opts.stats && opts.stats.length) {
+    y += 20; const colW = (W - PAD * 2) / opts.stats.length;
+    opts.stats.forEach((s, i) => {
+      const cx = PAD + colW * i;
+      x.textAlign = "left"; x.font = "700 84px 'Space Grotesk', system-ui, sans-serif"; x.fillStyle = "#F4F6F5";
+      x.fillText(String(s.n), cx, y + 70);
+      x.font = "500 24px 'Inter', system-ui, sans-serif"; x.fillStyle = "#8FB9AF";
+      x.fillText(String(s.l).toUpperCase(), cx, y + 112);
+    });
+    y += 170;
+  }
+  // body / quote — big, auto-fitted, wrapped
+  if (opts.body) {
+    let fs = opts.bodySize || 58;
+    const maxW = W - PAD * 2;
+    let lines;
+    for (; fs >= 30; fs -= 3) {
+      x.font = (opts.quote ? "600 " : "500 ") + fs + "px " + (opts.quote ? "'Space Grotesk'" : "'Inter'") + ", system-ui, sans-serif";
+      lines = wrapLines(x, opts.body, maxW);
+      if (lines.length * fs * 1.32 < (opts.stats ? 360 : 640)) break;
+    }
+    x.fillStyle = opts.quote ? "#F4F6F5" : "#D7DEDC";
+    if (opts.quote) { x.font = "700 90px 'Space Grotesk', system-ui, sans-serif"; x.fillStyle = CARD_ACCENT; x.fillText("“", PAD, y + 30); y += 40; x.font = "600 " + fs + "px 'Space Grotesk', system-ui, sans-serif"; x.fillStyle = "#F4F6F5"; }
+    for (const ln of lines) { x.fillText(ln, PAD, y + fs); y += fs * 1.32; }
+    y += 30;
+  }
+  // tag chips
+  if (opts.tags && opts.tags.length) {
+    x.font = "500 26px 'Inter', system-ui, sans-serif"; let tx = PAD;
+    for (const t of opts.tags.slice(0, 6)) {
+      const tw = x.measureText(t).width + 44;
+      if (tx + tw > W - PAD) break;
+      x.strokeStyle = "rgba(53,224,192,0.4)"; x.lineWidth = 1.5;
+      x.beginPath(); x.roundRect(tx, y, tw, 52, 26); x.stroke();
+      x.fillStyle = "#9BE9D8"; x.fillText(t, tx + 22, y + 35);
+      tx += tw + 12;
+    }
+    y += 80;
+  }
+  // footer brand line
+  x.font = "500 26px 'Inter', system-ui, sans-serif"; x.fillStyle = "#6E7A77";
+  x.fillText(opts.note || "Written in Journal", PAD, H - 96);
+  return await new Promise((res) => c.toBlob((b) => res(b), "image/png"));
+}
+// Hand a card image to the OS share sheet; fall back to a download.
+async function shareCardImage(blob, filename, text) {
+  try {
+    const file = new File([blob], filename, { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text: text || "" });
+      return "shared";
+    }
+  } catch (e) { if (e && e.name === "AbortError") return "cancelled"; }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return "downloaded";
+}
+
 // ---------- shared card styling for login + lock screens ----------
 const LG_CSS = `
   .lg-root { min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -1030,6 +1139,8 @@ function XOJournal() {
   const [backupBusy, setBackupBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const [dayCollapsed, setDayCollapsed] = useState({});
   const [rewind, setRewind] = useState(null);
@@ -1084,6 +1195,8 @@ function XOJournal() {
   const [wrapped, setWrapped] = useState(null);
   const [wrappedBusy, setWrappedBusy] = useState(false);
   const [wrapPeriod, setWrapPeriod] = useState("month");
+  const [sharingCard, setSharingCard] = useState(false);
+  const [celebrate, setCelebrate] = useState(null); // {n} streak milestone reveal
   const [welcome, setWelcome] = useState("");
   const [welcomeBusy, setWelcomeBusy] = useState(false);
   const [goals, setGoals] = useState([]);
@@ -1248,7 +1361,7 @@ function XOJournal() {
     setAdminBusy(true);
     try {
       const token = window.__session && window.__session.access_token;
-      const r = await fetch("/api/admin", { headers: { Authorization: "Bearer " + token } });
+      const r = await fetch(API_BASE + "/api/admin", { headers: { Authorization: "Bearer " + token } });
       if (r.ok) setAdminData(await r.json());
     } catch (e) { /* ignore */ }
     setAdminBusy(false);
@@ -1258,7 +1371,7 @@ function XOJournal() {
     if (!loaded) return;
     const token = window.__session && window.__session.access_token;
     if (!token) return;
-    fetch("/api/admin?probe=1", { headers: { Authorization: "Bearer " + token } })
+    fetch(API_BASE + "/api/admin?probe=1", { headers: { Authorization: "Bearer " + token } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d && d.admin) setIsAdmin(true); })
       .catch(() => {});
@@ -1915,8 +2028,72 @@ Digest:
     }
   };
 
+  // ----- shareable cards: every good moment becomes a one-tap post -----
+  const doShare = async (opts, filename, text) => {
+    if (sharingCard) return;
+    setSharingCard(true);
+    try {
+      const blob = await buildShareCard(opts);
+      await shareCardImage(blob, filename, text);
+    } catch (e) { setError("Couldn't build the share card — try again."); }
+    finally { setSharingCard(false); }
+  };
+  const shareWrapped = () => wrapped && doShare({
+    label: (wrapped.period === "year" ? "Year" : "Month") + " in review", title: wrapped.label,
+    stats: [{ n: wrapped.stats.notes, l: "notes" }, { n: wrapped.stats.days, l: "days" },
+      { n: wrapped.stats.topMoods[0] ? emotionOf(wrapped.stats.topMoods[0][0]).label : "—", l: "top mood" }],
+    body: wrapped.headline, bodySize: 40, tags: wrapped.stats.topTags.map((t) => t[0]),
+  }, "journal-wrapped.png", "My " + wrapped.label + " in Journal");
+  const shareStreak = (n) => doShare({
+    label: "On a roll", stats: [{ n: n, l: "day streak" }],
+    body: n >= 30 ? "A full month of showing up for myself." : "Showing up, one day at a time.",
+    bodySize: 46,
+  }, "journal-streak.png", n + "-day journaling streak");
+  const shareLine = (text) => doShare({
+    label: "From my journal", body: text, quote: true,
+  }, "journal-line.png", "A line from my journal");
+
+  // ----- milestone reveal: a little dopamine when a streak lands -----
+  const MILESTONES = [3, 7, 14, 30, 50, 75, 100, 150, 200, 300, 365, 500, 730, 1000];
+  useEffect(() => {
+    if (!loaded) return;
+    const s = computeStreak(days);
+    if (!MILESTONES.includes(s)) return;
+    const key = "daybook:celebrated:" + ((window.__session && window.__session.user && window.__session.user.id) || "local");
+    let last = 0; try { last = parseInt(localStorage.getItem(key) || "0", 10) || 0; } catch (e) { }
+    if (s > last) {
+      setCelebrate({ n: s });
+      try { localStorage.setItem(key, String(s)); } catch (e) { }
+    }
+  }, [loaded, days]);
+
   // ----- full backup + import (move data between versions/accounts) -----
   const importFileRef = useRef(null);
+  const deleteAccount = async () => {
+    if (deleteBusy) return;
+    setDeleteBusy(true); setError("");
+    try {
+      const token = window.__session && window.__session.access_token;
+      const r = await fetch(API_BASE + "/api/delete-account", {
+        method: "POST", headers: { Authorization: "Bearer " + token },
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(d.error || "Couldn't delete the account — try again."); setDeleteBusy(false); return; }
+      // wipe local mirror/queue for this device, then sign out
+      try {
+        const uid = window.__session && window.__session.user && window.__session.user.id;
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && uid && k.includes(uid)) localStorage.removeItem(k);
+        }
+      } catch (e) { }
+      if (window.__signOut) await window.__signOut();
+      location.reload();
+    } catch (e) {
+      setError("Couldn't reach the server — try again.");
+      setDeleteBusy(false);
+    }
+  };
   const backupAll = async () => {
     if (backupBusy) return;
     setBackupBusy(true);
@@ -2372,6 +2549,11 @@ Digest:
         .xo-panel-done:hover { box-shadow: 0 4px 24px rgba(var(--accent-rgb), 0.35); transform: translateY(-1px); }
         .xo-panel-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
         .xo-panel-btn { background: transparent; border: 1px solid var(--dash); color: var(--faint); font: 500 12.5px var(--bodyfont); padding: 8px 16px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-danger { margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255,107,129,0.25); }
+        .xo-danger label { color: #FF8B96; }
+        .xo-danger-btn { background: transparent; border: 1px solid rgba(255,107,129,0.5); color: #FF8B96; font: 600 12.5px var(--bodyfont); padding: 9px 18px; border-radius: 99px; cursor: pointer; transition: all .2s; }
+        .xo-danger-btn:hover { background: rgba(255,107,129,0.12); }
+        .xo-danger-btn:disabled { opacity: 0.5; cursor: default; }
         .xo-panel-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--faint); transform: translateY(-1px); }
         .xo-panel-btn:disabled { opacity: 0.5; cursor: default; }
 
@@ -2409,6 +2591,37 @@ Digest:
         .xo-win .wdot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 99px; margin-top: 6px; }
         .xo-win p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--body); }
         .xo-win span { font: 500 10.5px var(--bodyfont); color: var(--faint); }
+        .xo-winshare { background: none; border: none; padding: 0; color: var(--accent); font: 600 10.5px var(--bodyfont); cursor: pointer; }
+        .xo-winshare:hover { text-decoration: underline; }
+        /* wrapped card reveal */
+        .xo-wrapped { animation: xo-rise .55s cubic-bezier(.2,.7,.2,1) both; }
+        @keyframes xo-rise { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
+        /* milestone celebration */
+        .xo-celebrate { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+          background: rgba(4,6,8,0.72); backdrop-filter: blur(6px); animation: xo-fade .3s ease both;
+          padding: calc(20px + env(safe-area-inset-top,0)) 20px calc(20px + env(safe-area-inset-bottom,0)); }
+        @keyframes xo-fade { from { opacity: 0; } to { opacity: 1; } }
+        .xo-celebrate-card { position: relative; width: 100%; max-width: 380px; text-align: center; padding: 44px 30px;
+          border-radius: 26px; border: 1px solid rgba(var(--accent-rgb),0.4); overflow: hidden;
+          background: radial-gradient(120% 90% at 50% 0%, rgba(var(--accent-rgb),0.18), transparent 60%), var(--card);
+          animation: xo-pop .5s cubic-bezier(.2,.9,.3,1.2) both; }
+        @keyframes xo-pop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+        .xo-celebrate-card .ring { position: absolute; top: 40px; left: 50%; width: 120px; height: 120px; margin-left: -60px;
+          border: 2px solid var(--accent); border-radius: 999px; opacity: 0; transform: scale(.4); }
+        .xo-celebrate-card .r1 { animation: xo-ring 2.4s ease-out .1s infinite; }
+        .xo-celebrate-card .r2 { animation: xo-ring 2.4s ease-out .7s infinite; }
+        .xo-celebrate-card .r3 { animation: xo-ring 2.4s ease-out 1.3s infinite; }
+        @keyframes xo-ring { 0% { opacity: .55; transform: scale(.4); } 80% { opacity: 0; transform: scale(2.4); } 100% { opacity: 0; } }
+        .xo-cel-num { position: relative; font: 700 96px var(--disp); color: var(--accent); line-height: 1;
+          text-shadow: 0 0 30px rgba(var(--accent-rgb),0.5); animation: xo-num .6s cubic-bezier(.2,.9,.3,1.3) both; }
+        @keyframes xo-num { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
+        .xo-cel-lbl { font: 600 13px var(--bodyfont); letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin-top: 6px; }
+        .xo-cel-msg { font: 400 15px/1.55 var(--bodyfont); color: var(--body); margin: 18px 0 24px; }
+        .xo-cel-btns { display: flex; flex-direction: column; gap: 10px; }
+        .xo-cel-share { padding: 14px; border: none; border-radius: 12px; background: var(--accent); color: var(--btn-text);
+          font: 600 15px var(--bodyfont); cursor: pointer; }
+        .xo-cel-done { padding: 12px; border: none; background: none; color: var(--faint); font: 500 14px var(--bodyfont); cursor: pointer; }
+        @media (prefers-reduced-motion: reduce) { .xo-celebrate-card .ring { display: none; } .xo-wrapped, .xo-celebrate-card, .xo-cel-num { animation: none; } }
 
         .xo-promptcard { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 14px; padding: 14px 18px; margin: 0 0 14px; color: var(--body); font-size: 13.5px; line-height: 1.6; transition: transform .2s; }
         .xo-promptcard:hover { transform: translateX(3px); }
@@ -3160,6 +3373,21 @@ Digest:
           </p>
         )}
 
+        {celebrate && (
+          <div className="xo-celebrate" onClick={() => setCelebrate(null)}>
+            <div className="xo-celebrate-card" onClick={(e) => e.stopPropagation()}>
+              <span className="ring r1" /><span className="ring r2" /><span className="ring r3" />
+              <div className="xo-cel-num">{celebrate.n}</div>
+              <div className="xo-cel-lbl">day streak</div>
+              <p className="xo-cel-msg">{celebrate.n >= 30 ? "A whole month of showing up for yourself." : "You showed up " + celebrate.n + " days running — that's the hard part."}</p>
+              <div className="xo-cel-btns">
+                <button className="xo-cel-share" onClick={() => shareStreak(celebrate.n)} disabled={sharingCard}>{sharingCard ? "Preparing…" : "Share it"}</button>
+                <button className="xo-cel-done" onClick={() => setCelebrate(null)}>Keep going</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showCustomize && (
           <div className="xo-panel">
             <label htmlFor="xo-name">Journal name</label>
@@ -3390,6 +3618,24 @@ Digest:
               <button className="xo-panel-done" style={{ margin: 0 }} onClick={() => setShowCustomize(false)}>Done</button>
             </div>
             {importMsg && <div style={{ marginTop: 10, fontSize: 14, color: importMsg.startsWith("Imported") ? "var(--accent)" : "#FF8B96" }}>{importMsg}</div>}
+
+            <div className="xo-danger">
+              <label style={{ marginTop: 0 }}>Delete account</label>
+              <p className="xo-note" style={{ margin: "0 0 10px" }}>
+                Permanently deletes your account and every entry, photo, and setting. This can't be undone.
+                {" "}Export a backup first if you want to keep your journal.
+              </p>
+              {!confirmDelete ? (
+                <button className="xo-danger-btn" onClick={() => setConfirmDelete(true)} disabled={deleteBusy}>Delete my account…</button>
+              ) : (
+                <div className="xo-panel-row" style={{ marginTop: 0 }}>
+                  <button className="xo-danger-btn" onClick={deleteAccount} disabled={deleteBusy}>
+                    {deleteBusy ? "Deleting…" : "Yes, delete everything permanently"}
+                  </button>
+                  <button className="xo-panel-btn" onClick={() => setConfirmDelete(false)} disabled={deleteBusy}>Cancel</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -3444,6 +3690,11 @@ Digest:
                     <div className="xo-wrapped-brand"><span className="dot" />Journal</div>
                   </div>
                 )}
+                {wrapped && (
+                  <button className="xo-panel-btn" style={{ marginTop: 12 }} onClick={shareWrapped} disabled={sharingCard}>
+                    {sharingCard ? "Preparing…" : "Share this card"}
+                  </button>
+                )}
               </div>
               <div className="xo-panel">
                 <h3>Mood trend — last 30 days</h3>
@@ -3479,7 +3730,10 @@ Digest:
                         {wins.slice(0, 12).map((w, i) => (
                           <div className="xo-win" key={i}>
                             <span className="wdot" style={{ background: emotionOf(w.emotion).dot }} />
-                            <div><p>{w.text}</p><span>{prettyDate(w.key, true)}</span></div>
+                            <div>
+                              <p>{w.text}</p>
+                              <span>{prettyDate(w.key, true)} · <button className="xo-winshare" onClick={() => shareLine(w.text)} disabled={sharingCard}>share</button></span>
+                            </div>
                           </div>
                         ))}
                       </div>
