@@ -1,0 +1,63 @@
+# Codemagic build recipe for the Journal iOS app (Capacitor wrapper).
+# Runs on a cloud Mac: installs deps, generates the native iOS project from the
+# mobile/ Capacitor scaffold, signs it with your Apple account, builds an .ipa,
+# and uploads it to TestFlight. The web app itself stays on Vercel — this only
+# ships the native shell that bundles it.
+#
+# BEFORE THE FIRST BUILD, do two Apple things in the Codemagic UI (they use your
+# Apple secrets, so they can't live in this file):
+#   1. Settings -> Team integrations -> App Store Connect: add an API key and
+#      name it exactly  journal-asc-key  (matches the reference below).
+#   2. In App Store Connect, create the app record with bundle id
+#      com.jarrellherring.journal  (name: Journal). Automatic signing below then
+#      creates the signing profiles for you.
+#
+# NOTE ON PUSH: this pipeline builds and ships the app. Turning on the APNs
+# entitlement (aps-environment) is a one-time capability toggle done after the
+# first successful build — see APP_STORE.md. Everything else (backend, cron,
+# APNs credentials in Vercel) is already wired.
+
+workflows:
+  ios-journal:
+    name: Journal iOS (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: journal-asc-key   # <-- must match the API key name you add in Codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.jarrellherring.journal
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install Capacitor deps & generate the iOS project
+        script: |
+          set -e
+          cd mobile
+          npm install
+          # copies web assets into mobile/www, then creates mobile/ios/App
+          npm run add-ios
+      - name: Install CocoaPods dependencies
+        script: |
+          set -e
+          cd mobile/ios/App
+          pod install
+      - name: Set up code signing profiles
+        script: |
+          xcode-project use-profiles
+      - name: Build the iOS app (.ipa)
+        script: |
+          set -e
+          cd mobile/ios/App
+          xcode-project build-ipa \
+            --workspace "App.xcworkspace" \
+            --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
