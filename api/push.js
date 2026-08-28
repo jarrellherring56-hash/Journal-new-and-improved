@@ -2,6 +2,11 @@
 // not secret, but we still gate on the signed-in user so one account can't
 // register reminders under another. Nothing here needs the Anthropic key.
 module.exports = async (req, res) => {
+  // CORS so the native app (capacitor://localhost) can call this cross-origin.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST" && req.method !== "DELETE") {
     return res.status(405).json({ error: "POST or DELETE only" });
   }

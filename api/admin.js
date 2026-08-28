@@ -2,6 +2,11 @@
 // never WHAT they wrote. Entry text is parsed on the server purely to count
 // words/entries and is then discarded; it is never sent to the browser.
 module.exports = async (req, res) => {
+  // CORS so the native app (capacitor://localhost) can call this cross-origin.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  if (req.method === "OPTIONS") return res.status(204).end();
   try {
     const supaUrl = process.env.SUPABASE_URL;
     const anon = process.env.SUPABASE_ANON_KEY;
