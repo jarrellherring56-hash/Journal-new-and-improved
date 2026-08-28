@@ -39,6 +39,16 @@ workflows:
           npm install
           # copies web assets into mobile/www, then creates mobile/ios/App
           npm run add-ios
+      - name: Set app display name and build number
+        script: |
+          set -e
+          PLIST="mobile/ios/App/App/Info.plist"
+          # ITMS-90129: "Journal" as a display/bundle name is already taken on
+          # the App Store, so use a unique home-screen name instead.
+          plutil -replace CFBundleDisplayName -string "AI Journal" "$PLIST"
+          plutil -replace CFBundleName        -string "AI Journal" "$PLIST"
+          # bump the build number so Apple never sees a duplicate of build 1
+          plutil -replace CFBundleVersion     -string "2"          "$PLIST"
       - name: Install CocoaPods dependencies
         script: |
           set -e
