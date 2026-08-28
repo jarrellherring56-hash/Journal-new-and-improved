@@ -70,7 +70,9 @@ workflows:
             --workspace "App.xcworkspace" \
             --scheme "App"
     artifacts:
-      - build/ios/ipa/*.ipa
+      # the ipa is produced inside mobile/ios/App (that's the build step's cwd),
+      # so the glob must include that prefix or Codemagic finds nothing to publish
+      - mobile/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:
