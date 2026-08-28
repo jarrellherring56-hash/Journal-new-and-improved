@@ -47,8 +47,8 @@ workflows:
           # the App Store, so use a unique home-screen name instead.
           plutil -replace CFBundleDisplayName -string "Lucid AI Journal" "$PLIST"
           plutil -replace CFBundleName        -string "Lucid AI Journal" "$PLIST"
-          # bump the build number so Apple never sees a duplicate of build 1
-          plutil -replace CFBundleVersion     -string "2"          "$PLIST"
+          # bump the build number so Apple never sees a duplicate (build 2 used)
+          plutil -replace CFBundleVersion     -string "3"          "$PLIST"
       - name: Install CocoaPods dependencies
         script: |
           set -e
