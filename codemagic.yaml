@@ -45,8 +45,8 @@ workflows:
           PLIST="mobile/ios/App/App/Info.plist"
           # ITMS-90129: "Journal" as a display/bundle name is already taken on
           # the App Store, so use a unique home-screen name instead.
-          plutil -replace CFBundleDisplayName -string "AI Journal" "$PLIST"
-          plutil -replace CFBundleName        -string "AI Journal" "$PLIST"
+          plutil -replace CFBundleDisplayName -string "Lucid AI Journal" "$PLIST"
+          plutil -replace CFBundleName        -string "Lucid AI Journal" "$PLIST"
           # bump the build number so Apple never sees a duplicate of build 1
           plutil -replace CFBundleVersion     -string "2"          "$PLIST"
       - name: Install CocoaPods dependencies
