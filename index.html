@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 <meta name="theme-color" content="#0a0b0e">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Syncopate:wght@400;700&family=Karla:wght@400;500;700&family=Noto+Sans+JP:wght@400;700&family=Playfair+Display:wght@600;700&family=Bebas+Neue&family=Audiowide&family=Cormorant+Garamond:wght@500;600;700&family=Oswald:wght@400;500;600&family=Righteous&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Karla:wght@400;500;700&family=Syncopate:wght@400&family=Noto+Sans+JP:wght@400;500&family=Playfair+Display:wght@600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -29,7 +29,22 @@ const API_BASE = location.protocol.startsWith("http") ? "" : "https://journal-ne
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<style>html,body{margin:0;padding:0;background:#0a0b0e;overflow-x:hidden;max-width:100%}</style>
+<style>
+html, body {
+  margin: 0; padding: 0;
+  background: #0a0b0e;
+  overflow-x: hidden;
+  max-width: 100%;
+  /* native feel */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior: none;      /* kills rubber-band + PWA pull-to-refresh */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+* { -webkit-touch-callout: none; }   /* no long-press "Copy/Look Up" on chrome */
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -41,53 +56,42 @@ const { useState, useEffect, useRef } = React;
 
 // ---------- themes ----------
 const THEMES = {
-  mint:   { label: "Mint",          accent: "#3CE6A4", rgb: "60,230,164",  dark: "#1FBF83", btnText: "#0A0B0E" },
-  green:  { label: "Neon Green",    accent: "#39FF6B", rgb: "57,255,107",  dark: "#12D94A", btnText: "#04140A" },
-  purple: { label: "Purple Haze",   accent: "#B44BFF", rgb: "180,75,255",  dark: "#8A2BE2", btnText: "#14041A" },
-  red:    { label: "Neon Red",      accent: "#FF3B3B", rgb: "255,59,59",   dark: "#D91212", btnText: "#1A0404" },
-  blue:   { label: "Electric Blue", accent: "#3B82FF", rgb: "59,130,255",  dark: "#1257D9", btnText: "#041026" },
-  pink:   { label: "Hot Pink",      accent: "#FF2D95", rgb: "255,45,149",  dark: "#D9127A", btnText: "#1A0410" },
-  orange: { label: "Sunset Orange", accent: "#FF8A2B", rgb: "255,138,43",  dark: "#D96A12", btnText: "#1A0E04" },
-  white:  { label: "Ghost White",   accent: "#F2F2F2", rgb: "242,242,242", dark: "#BFBFBF", btnText: "#111111" },
+  mint:   { label: "Mint",          accent: "#4ED9A6", rgb: "78,217,166",  dark: "#21B283", btnText: "#0A0B0E" },
+  green:  { label: "Neon Green",    accent: "#5CD97B", rgb: "92,217,123",  dark: "#2FA857", btnText: "#04140A" },
+  purple: { label: "Purple Haze",   accent: "#9E6BEA", rgb: "158,107,234", dark: "#7B47C4", btnText: "#14041A" },
+  red:    { label: "Neon Red",      accent: "#E0483F", rgb: "224,72,63",   dark: "#B32E29", btnText: "#1A0404" },
+  blue:   { label: "Electric Blue", accent: "#5A8CE8", rgb: "90,140,232",  dark: "#3763BF", btnText: "#041026" },
+  pink:   { label: "Hot Pink",      accent: "#E05A94", rgb: "224,90,148",  dark: "#B33A6E", btnText: "#1A0410" },
+  orange: { label: "Sunset Orange", accent: "#E08542", rgb: "224,133,66",  dark: "#B85F22", btnText: "#1A0E04" },
+  white:  { label: "Ghost White",   accent: "#EDECE7", rgb: "237,236,231", dark: "#B8B6AF", btnText: "#111111" },
   // — The Weeknd album accents (each carries its own font/layout pack) —
   trilogy:    { label: "Trilogy",     accent: "#DCE0E5", rgb: "220,224,229", dark: "#9AA1AB", btnText: "#0A0B0E", pack: "serif" },
-  kissland:   { label: "Kiss Land",   accent: "#2EE6C6", rgb: "46,230,198",  dark: "#14BFA0", btnText: "#03140F", pack: "neon" },
-  madness:    { label: "BBTM Gold",   accent: "#E7B94C", rgb: "231,185,76",  dark: "#C29419", btnText: "#191204", pack: "bold" },
-  starboy:    { label: "Starboy",     accent: "#FF2E51", rgb: "255,46,81",   dark: "#D91238", btnText: "#1A0408", pack: "chrome" },
-  melancholy: { label: "Melancholy",  accent: "#8193D6", rgb: "129,147,214", dark: "#5A6EBB", btnText: "#0A0D1A", pack: "soft" },
-  afterhours: { label: "After Hours", accent: "#F20D18", rgb: "242,13,24",   dark: "#BF0710", btnText: "#FFFFFF", pack: "cine" },
-  dawnfm:     { label: "Dawn FM",     accent: "#8FB4FF", rgb: "143,180,255", dark: "#5E8AE6", btnText: "#060B1A", pack: "retro" },
-  alter:      { label: "Alter",       accent: "#FF2438", rgb: "255,36,56",   dark: "#C2101F", btnText: "#FFFFFF", pack: "ritual" },
-  akatsuki:   { label: "Akatsuki",    accent: "#DB2B34", rgb: "219,43,52",   dark: "#A8121C", btnText: "#FFFFFF", pack: "ember" },
+  kissland:   { label: "Kiss Land",   accent: "#45C9B2", rgb: "69,201,178",  dark: "#229683", btnText: "#03140F", pack: "neon" },
+  starboy:    { label: "Starboy",     accent: "#E23A55", rgb: "226,58,85",   dark: "#B0263C", btnText: "#1A0408", pack: "chrome" },
+  melancholy: { label: "Melancholy",  accent: "#8C9BC7", rgb: "140,155,199", dark: "#63719E", btnText: "#0A0D1A", pack: "soft" },
+  dawnfm:     { label: "Dawn FM",     accent: "#9CB4E0", rgb: "156,180,224", dark: "#6C86B5", btnText: "#060B1A", pack: "retro" },
 };
 const BACKGROUNDS = {
   slate:    { label: "Slate",       bg: "#0A0B0E", card: "#111318", line: "#20242C", dash: "#2A2F3A", inputbg: "#0E1014", ink: "#F2F3F5", body: "#D7DAE0", faint: "#7C8390", title: "#F7F8FA", strong: "#F2F3F5", strongRgb: "242,243,245", placeholder: "#4B515C" },
-  black:    { label: "Blackout",    bg: "#030403", card: "#0B0E0C", line: "#232823", dash: "#242A24", inputbg: "#060706", ink: "#F0F3F1", body: "#E4EAE5", faint: "#8E978F", title: "#FCFFFC", strong: "#F5F8F5", strongRgb: "245,248,245", placeholder: "#5F6A60" },
+  black:    { label: "Blackout",    bg: "#030403", card: "#101410", line: "#272D27", dash: "#242A24", inputbg: "#060706", ink: "#F0F3F1", body: "#E4EAE5", faint: "#8E978F", title: "#FCFFFC", strong: "#F5F8F5", strongRgb: "245,248,245", placeholder: "#5F6A60" },
   midnight: { label: "Midnight",    bg: "#04070F", card: "#0A101D", line: "#1E2638", dash: "#20293D", inputbg: "#060A14", ink: "#EEF2F8", body: "#E0E7F0", faint: "#8792A6", title: "#FBFDFF", strong: "#F2F6FC", strongRgb: "242,246,252", placeholder: "#5C6A80" },
   violet:   { label: "Deep Violet", bg: "#0A0512", card: "#150C22", line: "#2B2140", dash: "#2E2444", inputbg: "#0E0818", ink: "#F2EEF8", body: "#E8E2F0", faint: "#968CA6", title: "#FDFBFF", strong: "#F6F2FC", strongRgb: "246,242,252", placeholder: "#6A5F80" },
   charcoal: { label: "Charcoal",    bg: "#101013", card: "#1A1A1F", line: "#2E2E36", dash: "#303039", inputbg: "#141418", ink: "#F0F0F2", body: "#E6E6EA", faint: "#96969E", title: "#FDFDFF", strong: "#F4F4F6", strongRgb: "244,244,246", placeholder: "#6E6E78" },
   snow:     { label: "Daylight",    bg: "#F4F3F7", card: "#FFFFFF", line: "#DCDAE4", dash: "#E4E2EC", inputbg: "#F7F6FA", ink: "#1D1B24", body: "#2C2A35", faint: "#6E6A7C", title: "#141219", strong: "#232030", strongRgb: "35,32,48", placeholder: "#9A96A8" },
   lavender: { label: "Lavender",    bg: "#EAE4F4", card: "#FFFFFF", line: "#D6CDE8", dash: "#E0D8EE", inputbg: "#F3EFFA", ink: "#241E33", body: "#322A44", faint: "#756B8C", title: "#1C1630", strong: "#2A2240", strongRgb: "42,34,64", placeholder: "#A79DC0" },
   blush:    { label: "Blush",       bg: "#F7EFF2", card: "#FFFFFF", line: "#E8D8DE", dash: "#EFDFE5", inputbg: "#FBF5F7", ink: "#2A1F26", body: "#3A2C34", faint: "#8A737E", title: "#201720", strong: "#33242E", strongRgb: "51,36,46", placeholder: "#B79FAA" },
-  ocean:    { label: "Deep Ocean",  bg: "#030A0D", card: "#0A151A", line: "#1B3038", dash: "#1E353E", inputbg: "#061013", ink: "#EDF6F8", body: "#DFEDF0", faint: "#83A0A8", title: "#FAFEFF", strong: "#F0FAFB", strongRgb: "240,250,251", placeholder: "#52707A" },
+  ocean:    { label: "Deep Ocean",  bg: "#030A0D", card: "#0D1A20", line: "#1B3038", dash: "#1E353E", inputbg: "#061013", ink: "#EDF6F8", body: "#DFEDF0", faint: "#83A0A8", title: "#FAFEFF", strong: "#F0FAFB", strongRgb: "240,250,251", placeholder: "#52707A" },
   espresso: { label: "Espresso",    bg: "#0D0705", card: "#180F0B", line: "#33241C", dash: "#362820", inputbg: "#120A07", ink: "#F5EFEA", body: "#EDE3DB", faint: "#A18D80", title: "#FFFBF7", strong: "#F8F1EB", strongRgb: "248,241,235", placeholder: "#7A6154" },
   // — The Weeknd album backdrops —
   trilogyn:  { label: "Trilogy Noir", bg: "#070708", card: "#101012", line: "#242428", dash: "#2C2C31", inputbg: "#0B0B0D", ink: "#F2F2F3", body: "#E3E3E6", faint: "#8E8E96", title: "#FBFBFC", strong: "#F4F4F5", strongRgb: "244,244,245", placeholder: "#68686F" },
-  afterhrs:  { label: "After Hours",  bg: "#0B0304", card: "#160709", line: "#331116", dash: "#3A151B", inputbg: "#100405", ink: "#F8EFF0", body: "#EFE0E2", faint: "#A67F84", title: "#FFF9F9", strong: "#F8F0F0", strongRgb: "248,240,240", placeholder: "#7A5257" },
-  altar:     { label: "Dark Altar",   bg: "#04050A", card: "#0A0C15", line: "#1E2233", dash: "#262B40", inputbg: "#070910", ink: "#F1F2F8", body: "#DDE0EC", faint: "#7E86A0", title: "#F8F9FF", strong: "#F1F3FA", strongRgb: "241,243,250", placeholder: "#4E5570" },
-  ember:     { label: "Ember Dusk",   bg: "#0B0706", card: "#180F0B", line: "#341F17", dash: "#3D2519", inputbg: "#110A07", ink: "#F7EFE9", body: "#ECE0D6", faint: "#A88A78", title: "#FFF9F4", strong: "#F7EFE9", strongRgb: "247,239,233", placeholder: "#7C6151" },
 };
 // One-tap album looks: accent + backdrop + animated scene together.
 const ALBUM_PRESETS = [
   { id: "trilogy",    label: "Trilogy",      theme: "trilogy",    bg: "trilogyn" },
   { id: "kissland",   label: "Kiss Land",    theme: "kissland",   bg: "ocean" },
-  { id: "madness",    label: "BBTM",         theme: "madness",    bg: "espresso" },
   { id: "starboy",    label: "Starboy",      theme: "starboy",    bg: "trilogyn" },
   { id: "melancholy", label: "Melancholy",   theme: "melancholy", bg: "midnight" },
-  { id: "afterhours", label: "After Hours",  theme: "afterhours", bg: "afterhrs" },
   { id: "dawnfm",     label: "Dawn FM",      theme: "dawnfm",     bg: "violet" },
-  { id: "alter",      label: "Alter",        theme: "alter",      bg: "altar" },
-  { id: "akatsuki",   label: "Akatsuki",     theme: "akatsuki",   bg: "ember" },
 ];
 const DEFAULT_SETTINGS = {
   name: "Journal", theme: "mint", bg: "slate", tagline: "", customTagline: "",
@@ -176,16 +180,16 @@ async function disablePush() {
 
 // ---------- emotion palette ----------
 const EMOTIONS = {
-  happy:      { label: "Happy",      dot: "#FFD24B", bg: "rgba(255,210,75,0.13)",  text: "#FFE08A" },
-  sad:        { label: "Sad",        dot: "#5FA8FF", bg: "rgba(95,168,255,0.13)",  text: "#9CC6FF" },
-  anxious:    { label: "Anxious",    dot: "#FF8A3C", bg: "rgba(255,138,60,0.13)",  text: "#FFAF75" },
-  calm:       { label: "Calm",       dot: "#59E3B3", bg: "rgba(89,227,179,0.13)",  text: "#93EECB" },
-  excited:    { label: "Excited",    dot: "#FF2D95", bg: "rgba(255,45,149,0.14)",  text: "#FF7DBE" },
-  angry:      { label: "Angry",      dot: "#FF4B5C", bg: "rgba(255,75,92,0.15)",   text: "#FF8B96" },
-  nostalgic:  { label: "Nostalgic",  dot: "#B689FF", bg: "rgba(182,137,255,0.13)", text: "#CFAFFF" },
-  hopeful:    { label: "Hopeful",    dot: "#35E0E6", bg: "rgba(53,224,230,0.13)",  text: "#7FEBEF" },
-  frustrated: { label: "Frustrated", dot: "#E89A5C", bg: "rgba(232,154,92,0.13)",  text: "#F0BA8E" },
-  neutral:    { label: "Neutral",    dot: "#9B93B0", bg: "rgba(155,147,176,0.13)", text: "#BDB6CE" },
+  happy:      { label: "Happy",      dot: "#FFD24B", bg: "rgba(255,210,75,0.075)",  text: "#FFE08A" },
+  sad:        { label: "Sad",        dot: "#5FA8FF", bg: "rgba(95,168,255,0.075)",  text: "#9CC6FF" },
+  anxious:    { label: "Anxious",    dot: "#FF8A3C", bg: "rgba(255,138,60,0.075)",  text: "#FFAF75" },
+  calm:       { label: "Calm",       dot: "#59E3B3", bg: "rgba(89,227,179,0.075)",  text: "#93EECB" },
+  excited:    { label: "Excited",    dot: "#FF2D95", bg: "rgba(255,45,149,0.075)",  text: "#FF7DBE" },
+  angry:      { label: "Angry",      dot: "#FF4B5C", bg: "rgba(255,75,92,0.075)",   text: "#FF8B96" },
+  nostalgic:  { label: "Nostalgic",  dot: "#B689FF", bg: "rgba(182,137,255,0.075)", text: "#CFAFFF" },
+  hopeful:    { label: "Hopeful",    dot: "#35E0E6", bg: "rgba(53,224,230,0.075)",  text: "#7FEBEF" },
+  frustrated: { label: "Frustrated", dot: "#E89A5C", bg: "rgba(232,154,92,0.075)",  text: "#F0BA8E" },
+  neutral:    { label: "Neutral",    dot: "#9B93B0", bg: "rgba(155,147,176,0.075)", text: "#BDB6CE" },
 };
 const emotionOf = (e) => EMOTIONS[(e || "").toLowerCase()] || EMOTIONS.neutral;
 
@@ -976,7 +980,7 @@ async function shareCardImage(blob, filename, text) {
 
 // ---------- shared card styling for login + lock screens ----------
 const LG_CSS = `
-  .lg-root { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  .lg-root { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center;
     background: radial-gradient(900px 420px at 50% -8%, rgba(60,230,164,0.09) 0%, transparent 60%), #0a0b0e;
     font-family: 'Inter', system-ui, sans-serif;
     padding: calc(20px + env(safe-area-inset-top, 0px)) calc(20px + env(safe-area-inset-right, 0px))
@@ -1137,18 +1141,44 @@ function ThemeIcon({ theme }) {
   const f = { fill: "currentColor" };
   const paths = {
     trilogy:    <path {...p} d="M12 4l8 15H4z" />,                                                                 /* triangle — three */
-    kissland:   <path {...f} d="M12 21s-7-4.7-9.3-9.2C1 8.5 2.7 5 6 5c2 0 3.2 1.2 4 2.3C10.8 6.2 12 5 14 5c3.3 0 5 3.5 3.3 6.8C19 16.3 12 21 12 21z" />, /* heart — kiss */
-    madness:    <path {...f} d="M12 2c.6 5.2 1.6 8.4 8 10-6.4 1.6-7.4 4.8-8 10-.6-5.2-1.6-8.4-8-10 6.4-1.6 7.4-4.8 8-10z" />, /* sparkle */
+    kissland:   <path {...p} d="M12 19.8C11.2 19.2 4 14 4 8.8C4 6.1 6 4.1 8.5 4.1C10 4.1 11.3 4.9 12 6C12.7 4.9 14 4.1 15.5 4.1C18 4.1 20 6.1 20 8.8C20 14 12.8 19.2 12 19.8Z" />, /* heart — kiss (stroked, symmetric) */
     starboy:    <path {...f} d="M12 2l2.9 6.3 6.8.7-5.1 4.6 1.5 6.7L12 17.8 5 20.9l1.5-6.7L1.4 9.6l6.8-.7z" />,      /* star */
     melancholy: <path {...f} d="M12 3s6.5 7.2 6.5 11.2a6.5 6.5 0 0 1-13 0C5.5 10.2 12 3 12 3z" />,                  /* raindrop */
-    afterhours: <path {...f} d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />,                                   /* crescent moon */
     dawnfm:     <g {...p}><path d="M3 19h18" /><path d="M7.5 19a4.5 4.5 0 0 1 9 0" /><path d="M12 4v3M4.8 8.2l1.5 1.5M19.2 8.2l-1.5 1.5" /></g>, /* sunrise */
-    alter:      <g><circle cx="12" cy="12" r="8" {...p} /><circle cx="12" cy="12" r="2.4" {...f} /></g>,             /* halo ring */
-    akatsuki:   <g><circle cx="12" cy="12" r="8.5" {...p} /><circle cx="12" cy="12" r="2" {...f} /><circle cx="12" cy="5.6" r="1.5" {...f} /><circle cx="17.5" cy="15.2" r="1.5" {...f} /><circle cx="6.5" cy="15.2" r="1.5" {...f} /></g>, /* sharingan */
     mint:       <path {...p} d="M11 20C6 20 4 16 4 11c5 0 7 1 8 4 1-4 4-6 8-6 0 6-3 9-8 9z" />,                     /* leaf */
   };
   const book = <g {...p}><path d="M12 6c-1.6-1.3-4-2-7-2v13c3 0 5.4.7 7 2 1.6-1.3 4-2 7-2V4c-3 0-5.4.7-7 2z" /><path d="M12 6v13" /></g>;
   return <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">{paths[theme] || book}</svg>;
+}
+
+// ---------- bottom-nav / sheet line icons (outline, 24×24) ----------
+function NavIcon({ name }) {
+  const s = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+  const icons = {
+    journal:  <g {...s}><path d="M12 6c-1.6-1.3-4-2-7-2v13c3 0 5.4.7 7 2 1.6-1.3 4-2 7-2V4c-3 0-5.4.7-7 2z" /><path d="M12 6v13" /></g>,
+    schedule: <g {...s}><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M8 3v4M16 3v4M3.5 10h17" /><circle cx="12" cy="15" r="1.1" fill="currentColor" stroke="none" /></g>,
+    growth:   <g {...s}><path d="M4 15l5-5 3.5 3.5L20 6" /><path d="M20 10V6h-4" /></g>,
+    ask:      <g {...s}><path d="M20 12a7.5 7.5 0 0 1-10.9 6.7L4 20l1.3-4A7.5 7.5 0 1 1 20 12z" /><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" /></g>,
+    more:     <g {...s}><circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" /></g>,
+    insights: <g {...s}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></g>,
+    photos:   <g {...s}><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.6" /><path d="M20 16l-4.5-4.5L5 20" /></g>,
+    notepad:  <g {...s}><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5M9 12h7M9 16h5" /></g>,
+    deleted:  <g {...s}><path d="M4 7h16M10 4h4M9 7l.7 12h4.6L15 7M6 7l1 14h10l1-14" /></g>,
+    members:  <g {...s}><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.5a3 3 0 0 1 0 5.5M17 14.5a5.5 5.5 0 0 1 4 5.5" /></g>,
+    customize:<g {...s}><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" /></g>,
+  };
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{icons[name] || icons.more}</svg>;
+}
+
+// ---------- native haptics (no-op on web) ----------
+// "select" = light selection tick; "Light"/"Medium" = impact styles.
+function haptic(type) {
+  const H = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics;
+  if (!H) return;
+  try {
+    if (type === "select") H.selectionStart().then(() => H.selectionEnd()).catch(() => {});
+    else H.impact({ style: type }).catch(() => {});
+  } catch (e) {}
 }
 
 // ---------- app ----------
@@ -1170,6 +1200,9 @@ function XOJournal() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const sheetRef = useRef(null);
+  const sheetDragY = useRef(null);
   const [dayCollapsed, setDayCollapsed] = useState({});
   const [rewind, setRewind] = useState(null);
   const [lightbox, setLightbox] = useState(null);
@@ -1308,6 +1341,63 @@ function XOJournal() {
   const bgTheme = BACKGROUNDS[settings.bg] || BACKGROUNDS.black;
   const pack = theme.pack || "clean";
   const neon = pack === "neon";
+
+  // ----- keep the browser/native status bar in sync with the chosen backdrop -----
+  useEffect(() => {
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute("content", bgTheme.bg);
+    // Native: flip status-bar text between light/dark so the clock stays visible.
+    // Capacitor StatusBar.Style.Dark = light text; Light = dark text.
+    const lightBg = ["snow", "lavender", "blush"].includes(settings.bg);
+    const SB = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.StatusBar;
+    if (SB) SB.setStyle({ style: lightBg ? "LIGHT" : "DARK" }).catch(() => {});
+  }, [settings.bg]);
+
+  // Close the phone "More" sheet whenever the view changes.
+  useEffect(() => { setMoreOpen(false); }, [view]);
+
+  // iOS-style sticky nav: hairline border appears once the page is scrolled.
+  useEffect(() => {
+    const fn = () => {
+      const el = document.querySelector(".xo-top");
+      if (el) el.classList.toggle("scrolled", window.scrollY > 4);
+    };
+    window.addEventListener("scroll", fn, { passive: true });
+    return () => window.removeEventListener("scroll", fn);
+  }, []);
+
+  // Desktop keyboard shortcuts — skipped while typing (except Esc, which blurs).
+  useEffect(() => {
+    const onKey = (e) => {
+      const el = document.activeElement;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (e.key === "Escape") {
+        if (typing) { el.blur(); return; }
+        if (lightbox) return setLightbox(null);
+        if (moreOpen) return setMoreOpen(false);
+        if (tagOpen) return setTagOpen(false);
+        if (showCustomize) return setShowCustomize(false);
+        if (celebrate) return setCelebrate(null);
+        if (rewind) return setRewind(null);
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        setView("journal");
+        setTimeout(() => { const s = document.getElementById("xo-journal-search"); if (s) s.focus(); }, 30);
+      } else if (e.key === "n") {
+        e.preventDefault();
+        setView("journal");
+        setTimeout(() => { textareaRef.current && textareaRef.current.focus(); }, 30);
+      } else if (e.key >= "1" && e.key <= "5") {
+        e.preventDefault();
+        setView(["journal", "schedule", "goals", "ask", "insights"][Number(e.key) - 1]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox, moreOpen, tagOpen, showCustomize, celebrate, rewind]);
 
   // ----- the AI's name (declared early: render-time helpers below depend on it) -----
   const aiName = String(settings.aiName || "").trim();
@@ -1650,6 +1740,7 @@ Their week:
       }
 
       pushEntry(dayKey(), { id: uid(), time, segments: entrySegments });
+      haptic("Light");
       setDraft("");
       setPendingImgs([]);
       textareaRef.current && textareaRef.current.focus();
@@ -1969,6 +2060,7 @@ Their question: "${question}"`, 700, webSearch));
   };
   const checkInGoal = (id) => {
     const today = dayKey();
+    haptic("Light");
     saveGoals((prev) => prev.map((g) =>
       g.id === id && !g.checkins.includes(today)
         ? { ...g, checkins: [...g.checkins, today] }
@@ -2097,6 +2189,7 @@ Digest:
     let last = 0; try { last = parseInt(localStorage.getItem(key) || "0", 10) || 0; } catch (e) { }
     if (s > last) {
       setCelebrate({ n: s });
+      haptic("Medium");
       try { localStorage.setItem(key, String(s)); } catch (e) { }
     }
   }, [loaded, days]);
@@ -2505,6 +2598,7 @@ Digest:
           --disp: 'Space Grotesk', 'Inter', system-ui, sans-serif;
           --bodyfont: 'Inter', system-ui, sans-serif;
           min-height: 100vh;
+          min-height: 100dvh;
           background:
             radial-gradient(1100px 500px at 80% -10%, rgba(var(--accent-rgb), 0.07), transparent 60%),
             radial-gradient(900px 420px at 8% 0%, rgba(var(--strong-rgb), 0.04), transparent 55%),
@@ -2519,6 +2613,24 @@ Digest:
         }
         .xo-root ::selection { background: var(--accent); color: var(--btn-text); }
         .xo-shell { max-width: 1180px; margin: 0 auto; position: relative; z-index: 1; }
+
+        /* ---------- native feel: selection, tap delay, momentum ---------- */
+        .xo-root, .lg-root { -webkit-user-select: none; user-select: none; }
+        /* re-enable anywhere the user reads or writes real content */
+        .xo-segmain, .xo-body, .xo-msg, .xo-recapbox, .xo-wrapped-note, .xo-rewindtext,
+        .xo-schednote, .xo-schedtitle, .xo-memory p, .xo-win p, .xo-goaltext,
+        .xo-sub, .xo-promptcard, .xo-empty, .xo-note, .xo-sugtext,
+        textarea, input, .xo-pad, .xo-a, .xo-recap, .xo-q {
+          -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+        }
+        button, a, .xo-tab, .xo-topicchip, .xo-tag, .xo-act, .xo-swatch, .xo-preset,
+        .xo-mc, .xo-galtile, .xo-schedcheck, .xo-tagopt {
+          touch-action: manipulation;
+        }
+        .xo-chat, .xo-tagmenulist, .xo-side, .xo-tagmgr, .xo-yearpixels,
+        .xo-gallery, .xo-topicchips, .xo-tabs {
+          -webkit-overflow-scrolling: touch;
+        }
 
         /* ---------- header ---------- */
         .xo-top { display: flex; align-items: center; gap: 16px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -2551,7 +2663,7 @@ Digest:
         .xo-mtable th:not(:first-child), .xo-mtable td:not(.who) { padding-left: 18px; }
         .xo-mtable tr:last-child td { border-bottom: none; }
         .xo-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 14px 0; }
-        .xo-kpi { background: linear-gradient(180deg, rgba(var(--strong-rgb), 0.02), transparent 60%), var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; transition: transform .25s, border-color .25s; }
+        .xo-kpi { background: linear-gradient(180deg, rgba(var(--strong-rgb), 0.02), transparent 60%), var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px 20px; transition: transform .25s, border-color .25s; }
         .xo-kpi:hover { transform: translateY(-3px); border-color: var(--dash); }
         .xo-kpi h4 { font: 600 10.5px var(--bodyfont); color: var(--faint); margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.14em; }
         .xo-kpi .val { font-family: var(--disp); font-size: 28px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; color: var(--ink); }
@@ -2563,8 +2675,33 @@ Digest:
 
         /* ---------- layout ---------- */
         .xo-grid2 { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
-        .xo-side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; scrollbar-width: thin; }
-        @media (max-width: 1000px) { .xo-grid2 { grid-template-columns: 1fr; } .xo-side { position: static; } }
+        .xo-side { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; scrollbar-width: thin; }
+        /* Below desktop: rail collapses under the feed */
+        @media (max-width: 1023px) {
+          .xo-grid2 { grid-template-columns: 1fr; }
+          .xo-side  { position: static; max-height: none; }
+        }
+        /* iPad portrait + Split View: panels sit side-by-side under the feed */
+        @media (min-width: 700px) and (max-width: 1023px) {
+          .xo-side {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+            align-items: start; margin-top: 4px;
+          }
+          .xo-side .xo-panel { margin-bottom: 0; }
+          .xo-layoutbar { grid-column: 1 / -1; }
+        }
+        /* iPad landscape / Stage Manager wide: real two-column rail */
+        @media (min-width: 1024px) {
+          .xo-grid2 { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+        }
+        /* Half-screen window on a large monitor: keep two columns, tighter rail */
+        @media (min-width: 1024px) and (max-width: 1200px) {
+          .xo-grid2 { grid-template-columns: minmax(0, 1fr) 260px; }
+        }
+        /* Reading measure on 1-column iPad widths */
+        @media (min-width: 700px) and (max-width: 1023px) {
+          .xo-segmain, .xo-body, .xo-promptcard, .xo-recapbox { max-width: 68ch; }
+        }
 
         .xo-panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px; margin: 0 0 14px; transition: border-color .25s; }
         .xo-panel:hover { border-color: var(--dash); }
@@ -2647,7 +2784,7 @@ Digest:
         .xo-celebrate-card .r3 { animation: xo-ring 2.4s ease-out 1.3s infinite; }
         @keyframes xo-ring { 0% { opacity: .55; transform: scale(.4); } 80% { opacity: 0; transform: scale(2.4); } 100% { opacity: 0; } }
         .xo-cel-num { position: relative; font: 700 96px var(--disp); color: var(--accent); line-height: 1;
-          text-shadow: 0 0 30px rgba(var(--accent-rgb),0.5); animation: xo-num .6s cubic-bezier(.2,.9,.3,1.3) both; }
+          text-shadow: 0 0 18px rgba(var(--accent-rgb),0.35); animation: xo-num .6s cubic-bezier(.2,.9,.3,1.3) both; }
         @keyframes xo-num { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
         .xo-cel-lbl { font: 600 13px var(--bodyfont); letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin-top: 6px; }
         .xo-cel-msg { font: 400 15px/1.55 var(--bodyfont); color: var(--body); margin: 18px 0 24px; }
@@ -2715,7 +2852,7 @@ Digest:
         .xo-segmain { min-width: 0; font-size: 14px; line-height: 1.75; color: var(--body); }
         .xo-hl { padding: 2px 7px; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
         .xo-segside { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 4px; text-align: right; }
-        .xo-emolabel { font: 600 9.5px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+        .xo-emolabel { font: 600 9.5px var(--bodyfont); letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; opacity: 0.85; }
         .xo-segacts { display: inline-flex; gap: 2px; opacity: 0.4; transition: opacity .15s; }
         .xo-seg:hover .xo-segacts { opacity: 1; }
         .xo-entrytime { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; }
@@ -2767,7 +2904,7 @@ Digest:
         /* ---------- goals ---------- */
         .xo-goalnew { display: flex; gap: 10px; flex-wrap: wrap; }
         .xo-goalnew .xo-search { min-width: 200px; background: var(--inputbg); }
-        .xo-goal { background: var(--card); border: 1px solid var(--line); border-left: 3px solid rgba(var(--accent-rgb), 0.55); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; transition: border-color .25s; }
+        .xo-goal { background: var(--card); border: 1px solid var(--line); border-left: 3px solid rgba(var(--accent-rgb), 0.55); border-radius: 20px; padding: 14px 16px; margin-bottom: 12px; transition: border-color .25s; }
         .xo-goal:hover { border-color: var(--dash); border-left-color: rgba(var(--accent-rgb), 0.55); }
         .xo-goal.done { opacity: 0.6; border-left-color: var(--line); }
         .xo-goaltop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -2804,74 +2941,34 @@ Digest:
         .sk-serif .xo-panel, .sk-serif .xo-composer, .sk-serif .xo-daycard, .sk-serif .xo-kpi, .sk-serif .xo-goal { border-radius: 22px; }
         .sk-serif .xo-dayhead h2 { font-style: italic; }
 
-        /* bold — BBTM Gold: concert-poster condensed */
-        .xo-root.sk-bold { --disp: 'Bebas Neue', 'Oswald', sans-serif; }
-        .sk-bold .xo-title { letter-spacing: 0.06em; font-weight: 400; font-size: 24px; }
-        .sk-bold .xo-kpi .val { letter-spacing: 0.02em; }
-        .sk-bold .xo-kpi.hero .val { font-size: 52px; }
-        .sk-bold .xo-panel h3, .sk-bold .xo-dayhead h2, .sk-bold .xo-subhead { letter-spacing: 0.05em; font-weight: 400; }
-
-        /* chrome — Starboy: futuristic */
-        .xo-root.sk-chrome { --disp: 'Audiowide', 'Space Grotesk', sans-serif; }
-        .sk-chrome .xo-title { letter-spacing: 0.02em; font-weight: 400; font-size: 17px; }
-        .sk-chrome .xo-kpi .val { font-size: 24px; }
-        .sk-chrome .xo-kpi.hero .val { font-size: 34px; }
+        /* chrome — Starboy: futurism from tracking, not letterforms */
+        .xo-root.sk-chrome { --disp: 'Space Grotesk', 'Inter', sans-serif; }
+        .sk-chrome .xo-title { text-transform: uppercase; letter-spacing: 0.16em; font-weight: 600; font-size: 16px; }
         .sk-chrome .xo-panel h3 { letter-spacing: 0.04em; }
 
         /* soft — Melancholy: quiet serif display */
         .xo-root.sk-soft { --disp: 'Cormorant Garamond', Georgia, serif; }
-        .sk-soft .xo-title { letter-spacing: 0; font-weight: 700; font-size: 23px; }
+        .sk-soft .xo-title { letter-spacing: 0; font-weight: 600; font-size: 24px; }
         .sk-soft .xo-kpi .val { font-size: 32px; font-weight: 700; }
         .sk-soft .xo-kpi.hero .val { font-size: 48px; }
-        .sk-soft .xo-panel h3, .sk-soft .xo-dayhead h2 { font-weight: 600; font-size: 18px; letter-spacing: 0; }
+        .sk-soft .xo-panel h3, .sk-soft .xo-dayhead h2 { font-weight: 600; font-size: 17px; letter-spacing: 0; }
 
-        /* cine — After Hours: cinematic uppercase */
-        .xo-root.sk-cine { --disp: 'Oswald', sans-serif; }
-        .sk-cine .xo-title { text-transform: uppercase; letter-spacing: 0.12em; font-weight: 500; }
-        .sk-cine .xo-tab { text-transform: uppercase; letter-spacing: 0.08em; }
-        .sk-cine .xo-panel h3, .sk-cine .xo-dayhead h2, .sk-cine .xo-subhead { text-transform: uppercase; letter-spacing: 0.09em; font-weight: 500; }
-
-        /* retro — Dawn FM: rounded broadcast */
-        .xo-root.sk-retro { --disp: 'Righteous', 'Space Grotesk', sans-serif; }
-        .sk-retro .xo-title { letter-spacing: 0.01em; font-weight: 400; }
+        /* retro — Dawn FM: rounded broadcast (soft radii are the signature) */
+        .xo-root.sk-retro { --disp: 'Space Grotesk', 'Inter', sans-serif; }
+        .sk-retro .xo-title { letter-spacing: 0.08em; font-weight: 500; }
         .sk-retro .xo-panel, .sk-retro .xo-composer, .sk-retro .xo-daycard, .sk-retro .xo-kpi, .sk-retro .xo-goal { border-radius: 22px; }
         .sk-retro .xo-panel h3, .sk-retro .xo-dayhead h2 { font-weight: 400; }
 
-        /* ritual — Alter: engraved, ceremonial (the blood-altar look) */
-        .xo-root.sk-ritual { --disp: 'Cinzel', Georgia, serif; }
-        .sk-ritual .xo-topbar, .sk-ritual .xo-top { justify-content: center; }
-        .sk-ritual .xo-title { text-transform: uppercase; letter-spacing: 0.18em; font-weight: 700;
-          text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.55), 0 0 46px rgba(var(--accent-rgb), 0.3); }
-        .sk-ritual .xo-title span { color: var(--accent); }
-        .sk-ritual .xo-panel h3, .sk-ritual .xo-dayhead h2, .sk-ritual .xo-subhead { text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; }
-        .sk-ritual .xo-tab { text-transform: uppercase; letter-spacing: 0.1em; }
-        .sk-ritual .xo-kpi { border-color: rgba(var(--accent-rgb), 0.22); box-shadow: 0 0 30px rgba(var(--accent-rgb), 0.06); }
-        .sk-ritual .xo-kpi.hero .val { text-shadow: 0 0 22px rgba(var(--accent-rgb), 0.5); }
-        .sk-ritual .xo-panel { border-color: rgba(var(--accent-rgb), 0.18); }
-        .sk-ritual .xo-daycard { border-left: 2px solid rgba(var(--accent-rgb), 0.5); }
-        .sk-ritual .xo-add { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.45); }
-
-        /* ember — Akatsuki: engraved, smouldering (dramatic serif, warm red glow, left-aligned) */
-        .xo-root.sk-ember { --disp: 'Cinzel', Georgia, serif; }
-        .sk-ember .xo-title { text-transform: uppercase; letter-spacing: 0.13em; font-weight: 700;
-          text-shadow: 0 0 16px rgba(var(--accent-rgb), 0.4), 0 0 40px rgba(var(--accent-rgb), 0.22); }
-        .sk-ember .xo-panel h3, .sk-ember .xo-dayhead h2, .sk-ember .xo-subhead { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
-        .sk-ember .xo-tab { letter-spacing: 0.06em; }
-        .sk-ember .xo-kpi.hero .val { text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.4); }
-
         @media (max-width: 700px) {
-          .sk-bold .xo-title { font-size: 22px; }
-          .sk-bold .xo-kpi.hero .val, .sk-soft .xo-kpi.hero .val { font-size: 26px; }
-          .sk-ritual .xo-title, .sk-ember .xo-title { letter-spacing: 0.1em; }
+          .sk-soft .xo-kpi.hero .val { font-size: 26px; }
         }
 
         /* ================= NEON SKIN — Kiss Land's late-night identity ================= */
         .xo-root.sk-neon {
-          --glow: rgba(var(--accent-rgb), 0.55);
           position: relative;
           font-family: 'Karla', system-ui, sans-serif;
           background:
-            radial-gradient(900px 420px at 50% -10%, rgba(var(--accent-rgb), 0.20) 0%, transparent 62%),
+            radial-gradient(900px 420px at 50% -10%, rgba(var(--accent-rgb), 0.13) 0%, transparent 62%),
             radial-gradient(800px 480px at 6% 34%, rgba(var(--strong-rgb), 0.04) 0%, transparent 58%),
             radial-gradient(760px 520px at 94% 112%, rgba(var(--accent-rgb), 0.10) 0%, transparent 60%),
             var(--bg);
@@ -2881,52 +2978,43 @@ Digest:
           background: repeating-linear-gradient(
             115deg,
             transparent 0px, transparent 46px,
-            rgba(var(--accent-rgb), 0.03) 46px, rgba(var(--accent-rgb), 0.03) 47px,
+            rgba(var(--accent-rgb), 0.018) 46px, rgba(var(--accent-rgb), 0.018) 47px,
             transparent 47px, transparent 96px,
-            rgba(var(--strong-rgb), 0.02) 96px, rgba(var(--strong-rgb), 0.02) 97px
+            rgba(var(--strong-rgb), 0.012) 96px, rgba(var(--strong-rgb), 0.012) 97px
           );
         }
         .xo-root.sk-neon .xo-shell { position: relative; }
-        .xo-root.sk-neon .xo-icon { filter: drop-shadow(0 0 10px var(--glow)); }
-        .xo-eyebrow { font-family: 'Noto Sans JP', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: .5em; color: var(--strong); margin: 0 0 6px; text-shadow: 0 0 10px var(--glow), 0 0 26px var(--glow); }
-        .xo-root.sk-neon .xo-title { font-family: 'Syncopate', sans-serif; font-weight: 700; font-size: clamp(20px, 6vw, 32px); letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 16px var(--glow), 0 0 44px rgba(var(--accent-rgb), 0.28); animation: xoflicker 7s infinite; word-break: break-word; }
-        .xo-root.sk-neon .xo-title span { color: var(--accent); font-weight: 700; }
-        @keyframes xoflicker {
-          0%, 91%, 93.5%, 100% { opacity: 1; }
-          92% { opacity: .72; }
-          93% { opacity: .9; }
+        .xo-root.sk-neon .xo-icon { animation: none; filter: drop-shadow(0 0 9px rgba(var(--accent-rgb), 0.35)); }
+        /* eyebrow only renders under the neon (Kiss Land) pack — a quiet label, not a sign */
+        .xo-root.sk-neon .xo-eyebrow {
+          display: block; font-family: 'Noto Sans JP', sans-serif; font-weight: 500;
+          font-size: 9px; letter-spacing: 0.26em; color: var(--faint); opacity: 0.75; margin: 0 0 5px;
         }
-        @media (prefers-reduced-motion: reduce) { .xo-root.sk-neon .xo-title { animation: none; } }
+        /* Syncopate lives on the title ONLY — the theme's single signature */
+        .xo-root.sk-neon .xo-title { font-family: 'Syncopate', sans-serif; font-weight: 400; font-size: clamp(17px, 4vw, 22px); letter-spacing: 0.13em; text-transform: uppercase; text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.22); word-break: break-word; }
+        .xo-root.sk-neon .xo-title span { color: var(--accent); font-weight: 400; }
         .xo-root.sk-neon .xo-tabs { background: transparent; border: none; padding: 0; gap: 8px; }
         .xo-root.sk-neon .xo-tab { border: 1px solid var(--line); background: var(--card); color: var(--faint); font: 700 11.5px 'Karla', sans-serif; letter-spacing: .08em; text-transform: uppercase; padding: 8px 14px; }
-        .xo-root.sk-neon .xo-tab.on { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.55); background: var(--soft); text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
+        .xo-root.sk-neon .xo-tab.on { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.55); background: var(--soft); }
         .xo-root.sk-neon .xo-gear { border-color: var(--line); background: var(--card); font: 700 11px 'Karla', sans-serif; letter-spacing: .08em; text-transform: uppercase; }
         .xo-root.sk-neon .xo-gear:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); }
         .xo-root.sk-neon .xo-sub.vibe { font-style: italic; }
-        .xo-root.sk-neon .xo-kpi { border-radius: 14px; box-shadow: 0 0 26px rgba(var(--accent-rgb), 0.08); }
-        .xo-root.sk-neon .xo-kpi .val { font-family: 'Syncopate', sans-serif; font-size: 20px; letter-spacing: 0; }
-        .xo-root.sk-neon .xo-kpi.hero .val { font-size: 28px; text-shadow: 0 0 14px var(--glow); }
-        .xo-root.sk-neon .xo-panel, .xo-root.sk-neon .xo-composer, .xo-root.sk-neon .xo-daycard, .xo-root.sk-neon .xo-goal, .xo-root.sk-neon .xo-wallpost { border-radius: 14px; }
-        .xo-root.sk-neon .xo-panel { border-color: rgba(var(--accent-rgb), 0.35); box-shadow: 0 0 26px rgba(var(--accent-rgb), 0.1); }
-        .xo-root.sk-neon .xo-panel h3, .xo-root.sk-neon .xo-subhead { font-family: 'Syncopate', sans-serif; font-weight: 400; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
-        .xo-root.sk-neon .xo-composer { background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.05), rgba(var(--strong-rgb), 0.02)), var(--card); box-shadow: 0 12px 34px rgba(0,0,0,0.35); }
-        .xo-root.sk-neon .xo-composer:focus-within { border-color: rgba(var(--accent-rgb), 0.55); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.25), 0 0 26px rgba(var(--accent-rgb), 0.14); }
+        /* the 14px radius is a Kiss Land signature — sharper than the base 20px */
+        .xo-root.sk-neon .xo-panel, .xo-root.sk-neon .xo-composer, .xo-root.sk-neon .xo-daycard, .xo-root.sk-neon .xo-kpi { border-radius: 14px; }
+        .xo-root.sk-neon .xo-panel { border-color: rgba(var(--accent-rgb), 0.18); }
+        .xo-root.sk-neon .xo-panel h3, .xo-root.sk-neon .xo-subhead, .xo-root.sk-neon .xo-dayhead h2, .xo-root.sk-neon .xo-empty strong { font-family: 'Space Grotesk', sans-serif; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; }
+        .xo-root.sk-neon .xo-panel h3, .xo-root.sk-neon .xo-subhead, .xo-root.sk-neon .xo-dayhead h2 { font-size: 12.5px; }
+        .xo-root.sk-neon .xo-empty strong { font-size: 14px; }
+        .xo-root.sk-neon .xo-composer { background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.05), rgba(var(--strong-rgb), 0.02)), var(--card); }
+        .xo-root.sk-neon .xo-composer:focus-within { border-color: rgba(var(--accent-rgb), 0.55); }
         .xo-root.sk-neon .xo-promptcard { border: 1px dashed rgba(var(--accent-rgb), 0.5); }
-        .xo-root.sk-neon .xo-promptcard b { text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
         .xo-root.sk-neon .xo-daycard { border-left: 2px solid rgba(var(--accent-rgb), 0.5); }
-        .xo-root.sk-neon .xo-dayhead h2 { font-family: 'Syncopate', sans-serif; font-weight: 400; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; white-space: normal; }
-        .xo-root.sk-neon .xo-topic { text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.55); }
-        .xo-root.sk-neon .xo-emolabel { text-shadow: 0 0 8px currentColor; }
-        .xo-root.sk-neon .xo-chip i { box-shadow: 0 0 6px currentColor; }
+        .xo-root.sk-neon .xo-dayhead h2 { white-space: normal; }
         .xo-root.sk-neon .xo-attach, .xo-root.sk-neon .xo-mic, .xo-root.sk-neon .xo-ask { border-color: rgba(var(--accent-rgb), 0.4); color: var(--accent); font-weight: 700; }
         .xo-root.sk-neon .xo-attach:hover:not(:disabled), .xo-root.sk-neon .xo-mic:hover:not(:disabled), .xo-root.sk-neon .xo-ask:hover:not(:disabled) { background: var(--soft); color: var(--accent); border-color: rgba(var(--accent-rgb), 0.55); }
-        .xo-root.sk-neon .xo-add { background: linear-gradient(100deg, var(--accent), var(--accent-dark)); border: none; font: 700 12.5px 'Karla', sans-serif; letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.4); }
-        .xo-root.sk-neon .xo-add:hover:not(:disabled) { filter: brightness(1.12); box-shadow: 0 0 28px rgba(var(--accent-rgb), 0.6); }
-        .xo-root.sk-neon .xo-mic.live { box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.6); }
-        .xo-root.sk-neon .xo-aibadge { box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5); }
-        .xo-root.sk-neon .xo-goalweek i.hit { box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6); }
-        .xo-root.sk-neon .xo-empty strong { font-family: 'Syncopate', sans-serif; text-transform: uppercase; letter-spacing: .14em; font-size: 13px; text-shadow: 0 0 14px var(--glow); }
-        .xo-root.sk-neon .xo-empty .jp { font-family: 'Noto Sans JP', sans-serif; color: var(--strong); display: block; margin-top: 14px; letter-spacing: .3em; font-size: 12px; text-shadow: 0 0 10px var(--glow); }
+        .xo-root.sk-neon .xo-add { background: var(--accent); border: none; font: 700 12.5px 'Karla', sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+        .xo-root.sk-neon .xo-add:hover:not(:disabled) { filter: brightness(1.08); }
+        .xo-root.sk-neon .xo-empty .jp { display: block; font-family: 'Noto Sans JP', sans-serif; color: var(--faint); margin-top: 14px; letter-spacing: 0.24em; font-size: 11px; }
 
         /* ================= PHONE OPTIMIZATION (any skin) ================= */
         @media (max-width: 700px) {
@@ -3095,11 +3183,11 @@ Digest:
         .xo-lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(3, 4, 6, 0.92); backdrop-filter: blur(6px); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; cursor: zoom-out; animation: xofade .18s ease both; }
         @keyframes xofade { from { opacity: 0; } to { opacity: 1; } }
         @media (prefers-reduced-motion: reduce) { .xo-lightbox { animation: none; } }
-        .xo-lightimg { max-width: min(920px, 94vw); max-height: 82vh; border-radius: 14px; border: 1px solid rgba(var(--accent-rgb), 0.35); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); cursor: default; object-fit: contain; }
+        .xo-lightimg { max-width: min(920px, 94vw); max-height: 82dvh; border-radius: 14px; border: 1px solid rgba(var(--accent-rgb), 0.35); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); cursor: default; object-fit: contain; }
         .xo-lightcap { margin-top: 14px; color: var(--body); font-size: 13.5px; letter-spacing: 0.02em; }
         .xo-lightclose { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(18px + env(safe-area-inset-right, 0px)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .xo-lightclose:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.5); }
-        .xo-chat { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 55vh; overflow-y: auto; scrollbar-width: thin; }
+        .xo-chat { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: min(55dvh, 460px); overflow-y: auto; scrollbar-width: thin; }
         .xo-msg { padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
         .xo-msg.u { align-self: flex-end; background: var(--soft); border: 1px solid rgba(var(--accent-rgb), 0.35); max-width: 85%; color: var(--ink); }
         .xo-msg.a { align-self: flex-start; background: var(--inputbg); border: 1px solid var(--line); max-width: 92%; color: var(--body); }
@@ -3183,7 +3271,7 @@ Digest:
         .xo-padhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
         .xo-padstate { font: 500 11px var(--bodyfont); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); flex: none; }
         .xo-padstate.saved { color: var(--accent); }
-        .xo-pad { width: 100%; box-sizing: border-box; min-height: 58vh; resize: vertical; background: transparent;
+        .xo-pad { width: 100%; box-sizing: border-box; min-height: 58dvh; resize: vertical; background: transparent;
           border: none; outline: none; color: var(--ink); caret-color: var(--accent);
           font: 15px/1.75 var(--bodyfont); }
         .xo-pad::placeholder { color: var(--placeholder); }
@@ -3225,27 +3313,7 @@ Digest:
         @keyframes fxballoon { 0%, 100% { transform: translate(0, 0); } 33% { transform: translate(-12px, -24px); } 66% { transform: translate(9px, -10px); } }
         @keyframes fxbreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         @keyframes fxshimmer { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
-        @keyframes fxcross {
-          0%, 100% { opacity: 0.15; filter: drop-shadow(0 0 30px rgba(var(--accent-rgb), 0.9)); }
-          50% { opacity: 0.05; filter: drop-shadow(0 0 8px rgba(var(--accent-rgb), 0.35)); }
-        }
-        @keyframes fxneon {
-          0%, 5%, 7%, 40%, 43%, 100% { opacity: 1; }
-          6% { opacity: 0.35; }
-          41% { opacity: 0.5; }
-          42% { opacity: 0.85; }
-        }
-        @keyframes fxsweep {
-          0% { transform: rotate(-24deg) translateX(70px); opacity: 0; }
-          18% { opacity: 1; }
-          62% { opacity: 1; }
-          100% { transform: rotate(-24deg) translateX(-150px); opacity: 0; }
-        }
         @keyframes fxdrift { 0% { background-position: 0 0; } 100% { background-position: 47.7px 0; } }
-        @keyframes fxleak {
-          0%, 100% { opacity: 0.5; transform: rotate(-8deg) translateX(0); }
-          50% { opacity: 1; transform: rotate(-8deg) translateX(44px); }
-        }
         @keyframes fxwave { 0%, 100% { transform: scale(1); opacity: 0.75; } 50% { transform: scale(1.06); opacity: 1; } }
         @media (prefers-reduced-motion: reduce) { .xo-fx i { animation: none !important; } }
 
@@ -3260,109 +3328,178 @@ Digest:
           background: radial-gradient(ellipse, rgba(var(--strong-rgb), 0.05), transparent 70%); filter: blur(10px);
           animation: fxbreathe 12s ease-in-out infinite; }
 
-        /* Kiss Land — neon signage and light poles */
+        /* Kiss Land — dimmed neon signage + light poles (atmosphere, not foreground) */
         .m-kissland .fx1::before { content: "キス・ランド"; }
-        .m-kissland .fx1 { top: 110px; right: 34px; writing-mode: vertical-rl; font-family: 'Noto Sans JP', sans-serif;
-          font-weight: 700; font-size: 42px; letter-spacing: 0.35em; color: rgba(var(--accent-rgb), 0.10);
-          text-shadow: 0 0 24px rgba(var(--accent-rgb), 0.20);
-          animation: fxneon 9s linear infinite; }
-        .m-kissland .fx2 { top: 0; left: 7%; width: 1px; height: 42vh;
-          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.35), transparent);
-          box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.3);
-          animation: fxshimmer 4s ease-in-out infinite; }
-        .m-kissland .fx3 { top: 0; left: 11%; width: 1px; height: 26vh;
-          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.22), transparent);
-          animation: fxshimmer 6s ease-in-out 1s infinite; }
+        .m-kissland .fx1 {
+          top: 22dvh; right: 22px;
+          writing-mode: vertical-rl;
+          font-family: 'Noto Sans JP', sans-serif;
+          font-weight: 400;
+          font-size: 26px;
+          letter-spacing: 0.28em;
+          color: rgba(var(--accent-rgb), 0.055);
+          animation: fxbreathe 26s ease-in-out infinite;
+        }
+        .m-kissland .fx2 { top: 0; left: 7%; width: 1px; height: 42dvh;
+          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.20), transparent);
+          box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.16);
+          animation: fxshimmer 14s ease-in-out infinite; }
+        .m-kissland .fx3 { top: 0; left: 11%; width: 1px; height: 26dvh;
+          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.13), transparent);
+          animation: fxshimmer 19s ease-in-out 1s infinite; }
 
-        /* BBTM — gold haze and stage-light streaks */
-        .m-madness .fx1 { top: -140px; left: 28%; width: 640px; height: 320px;
-          background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.12), transparent 70%); filter: blur(6px);
-          animation: fxbreathe 10s ease-in-out infinite; }
-        .m-madness .fx2 { bottom: 11%; right: -60px; width: 380px; height: 2px; transform: rotate(-24deg);
-          background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.45));
-          box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.4);
-          animation: fxsweep 11s ease-in-out infinite; }
-        .m-madness .fx3 { bottom: 17%; right: -40px; width: 260px; height: 1px; transform: rotate(-24deg);
-          background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.3));
-          animation: fxsweep 15s ease-in-out 5s infinite; }
-
-        /* Starboy — the glowing cross */
-        .m-starboy .fx1 { top: 90px; right: 7%; width: 150px; height: 230px; opacity: 0.10;
-          background:
-            linear-gradient(var(--accent), var(--accent)) 50% 0 / 26px 100% no-repeat,
-            linear-gradient(var(--accent), var(--accent)) 50% 24% / 100% 26px no-repeat;
-          filter: drop-shadow(0 0 26px rgba(var(--accent-rgb), 0.8));
-          animation: fxcross 5s ease-in-out infinite; }
-        .m-starboy .fx2 { bottom: -120px; left: -100px; width: 520px; height: 340px;
+        /* Starboy — a high, cold light field (no cross) */
+        .m-starboy .fx1 { top: -240px; left: 50%; transform: translateX(-50%); width: 620px; height: 620px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(var(--accent-rgb), 0.14) 0%, rgba(var(--accent-rgb), 0.05) 30%, transparent 60%);
+          filter: blur(8px); animation: fxbreathe 20s ease-in-out infinite; }
+        .m-starboy .fx2 { bottom: -140px; left: -110px; width: 520px; height: 340px;
           background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.10), transparent 70%);
-          animation: fxbreathe 9s ease-in-out infinite; }
-        .m-starboy .fx3 { top: 30%; left: -60px; width: 300px; height: 1px; transform: rotate(18deg);
-          background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.4), transparent);
-          box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.3);
-          animation: fxshimmer 5s ease-in-out infinite; }
+          animation: fxbreathe 22s ease-in-out infinite; }
+        .m-starboy .fx3 { bottom: -120px; right: -120px; width: 460px; height: 320px;
+          background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.07), transparent 72%);
+          filter: blur(10px); animation: fxbreathe 26s ease-in-out infinite; }
 
-        /* Melancholy — rain streaks and cold mist */
+        /* Melancholy — soft rain and cold mist */
         .m-melancholy .fx1 { inset: -80px 0 0 0;
-          background: repeating-linear-gradient(100deg, transparent 0 46px, rgba(var(--accent-rgb), 0.06) 46px 47px);
-          animation: fxdrift 7s linear infinite; }
+          background: repeating-linear-gradient(100deg, transparent 0 46px, rgba(var(--accent-rgb), 0.035) 46px 47px);
+          animation: fxdrift 20s linear infinite; }
         .m-melancholy .fx2 { bottom: -140px; right: -120px; width: 560px; height: 380px;
           background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.12), transparent 70%); filter: blur(8px);
-          animation: fxbreathe 11s ease-in-out infinite; }
+          animation: fxbreathe 20s ease-in-out infinite; }
         .m-melancholy .fx3 { top: -120px; left: 20%; width: 480px; height: 280px;
           background: radial-gradient(ellipse, rgba(var(--strong-rgb), 0.05), transparent 70%); }
 
-        /* After Hours — red horizon, light leak, vignette */
-        .m-afterhours .fx1 { left: 0; right: 0; bottom: 0; height: 34vh;
-          background: linear-gradient(0deg, rgba(var(--accent-rgb), 0.16), transparent);
-          animation: fxbreathe 9s ease-in-out infinite; }
-        .m-afterhours .fx2 { top: 18%; left: -80px; width: 420px; height: 3px; transform: rotate(-8deg);
-          background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.5), transparent);
-          box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.45);
-          animation: fxleak 12s ease-in-out infinite; }
-        .m-afterhours .fx3 { inset: 0; box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.55); }
+        /* Dawn FM — radio waves and first light */
+        .m-dawnfm .fx1 { top: -260px; right: -260px; width: 640px; height: 640px; border-radius: 50%;
+          background: repeating-radial-gradient(circle, transparent 0 34px, rgba(var(--accent-rgb), 0.04) 34px 36px);
+          animation: fxwave 22s ease-in-out infinite; }
+        .m-dawnfm .fx2 { left: 0; right: 0; bottom: 0; height: 30dvh;
+          background: linear-gradient(0deg, rgba(var(--accent-rgb), 0.14), transparent);
+          animation: fxbreathe 20s ease-in-out infinite; }
+        .m-dawnfm .fx3 { bottom: 6dvh; left: 12%; width: 76%; height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(var(--strong-rgb), 0.25), transparent); }
 
         /* featured shapes need open margins — hide them when the shell fills the window */
         @media (max-width: 1360px) {
-          .m-starboy .fx1, .m-kissland .fx1, .m-trilogy .fx1, .m-trilogy .fx2 { display: none; }
+          .m-trilogy .fx1, .m-trilogy .fx2 { display: none; }
+        }
+        /* the Kiss Land sign is faint enough (0.055 alpha) to live on laptops; hide only on phones */
+        @media (max-width: 900px) {
+          .m-kissland .fx1 { display: none; }
         }
 
-        /* Dawn FM — radio waves and first light */
-        .m-dawnfm .fx1 { top: -260px; right: -260px; width: 640px; height: 640px; border-radius: 50%;
-          background: repeating-radial-gradient(circle, transparent 0 34px, rgba(var(--accent-rgb), 0.07) 34px 36px);
-          animation: fxwave 8s ease-in-out infinite; }
-        .m-dawnfm .fx2 { left: 0; right: 0; bottom: 0; height: 30vh;
-          background: linear-gradient(0deg, rgba(var(--accent-rgb), 0.14), transparent);
-          animation: fxbreathe 10s ease-in-out infinite; }
-        .m-dawnfm .fx3 { bottom: 6vh; left: 12%; width: 76%; height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(var(--strong-rgb), 0.25), transparent); }
+        /* ==================== phone: bottom tab bar + sheet ==================== */
+        .xo-tabbar { display: none; }
+        .xo-sheetscrim, .xo-sheet { display: none; }
 
-        /* Alter — blood halo overhead, glowing vein bloom, heavy vignette */
-        .m-alter .fx1 { top: -220px; left: 50%; transform: translateX(-50%); width: 620px; height: 620px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(var(--accent-rgb), 0.55) 0%, rgba(var(--accent-rgb), 0.18) 28%, transparent 60%);
-          filter: blur(6px); animation: fxbreathe 6s ease-in-out infinite; }
-        .m-alter .fx2 { left: 0; right: 0; bottom: -80px; height: 62vh;
-          background:
-            radial-gradient(120% 90% at 50% 120%, rgba(var(--accent-rgb), 0.20), transparent 62%),
-            radial-gradient(60% 70% at 50% 130%, rgba(var(--accent-rgb), 0.30), transparent 60%);
-          animation: fxwave 7s ease-in-out infinite; }
-        .m-alter .fx3 { inset: 0; box-shadow: inset 0 0 220px 40px rgba(0, 0, 0, 0.78), inset 0 -120px 160px -60px rgba(var(--accent-rgb), 0.22); }
+        @media (max-width: 700px) {
+          .xo-tabs { display: none; }              /* hide the top strip on phone */
 
-        /* Akatsuki — warm sunset window glow, drifting crimson leaves/embers, dusk vignette */
-        /* translateY by exactly one tile height (140px) = seamless GPU-composited loop (no per-frame repaint) */
-        @keyframes fxfall { from { transform: translateY(0); } to { transform: translateY(140px); } }
-        .m-akatsuki .fx1 { top: -8%; right: -6%; width: 58%; height: 92%;
-          background:
-            radial-gradient(72% 60% at 82% 28%, rgba(255, 150, 70, 0.20), transparent 60%),
-            radial-gradient(58% 52% at 86% 56%, rgba(var(--accent-rgb), 0.16), transparent 62%);
-          animation: fxbreathe 9s ease-in-out infinite; }
-        .m-akatsuki .fx2 { top: -160px; left: 0; right: 0; height: calc(100% + 300px);
-          background:
-            radial-gradient(circle at 20% 30%, rgba(var(--accent-rgb), 0.55) 0 2px, transparent 3px),
-            radial-gradient(circle at 62% 70%, rgba(255, 120, 55, 0.42) 0 1.6px, transparent 3px);
-          background-size: 95px 140px, 150px 140px;
-          will-change: transform;
-          animation: fxfall 11s linear infinite; }
-        .m-akatsuki .fx3 { inset: 0; box-shadow: inset 0 0 200px 30px rgba(0, 0, 0, 0.72), inset -120px 0 160px -70px rgba(255, 130, 55, 0.16); }
+          .xo-tabbar {
+            display: flex;
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+            padding: 8px calc(6px + env(safe-area-inset-left, 0px))
+                     calc(6px + env(safe-area-inset-bottom, 0px))
+                     calc(6px + env(safe-area-inset-right, 0px));
+            background: color-mix(in srgb, var(--bg) 86%, transparent);
+            -webkit-backdrop-filter: saturate(180%) blur(22px);
+            backdrop-filter: saturate(180%) blur(22px);
+            border-top: 1px solid var(--line);
+          }
+          .xo-tabitem {
+            flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+            background: none; border: none; padding: 5px 2px 3px;
+            color: var(--faint); font: 500 10px var(--bodyfont); letter-spacing: .01em;
+            cursor: pointer; position: relative;
+            transition: color .18s;
+            min-height: 48px;
+          }
+          .xo-tabitem.on { color: var(--accent); }
+          .xo-tabitem:active { opacity: .55; }
+          .xo-tabitem svg { width: 24px; height: 24px; }
+          .xo-tabitem .badge {
+            position: absolute; top: 3px; left: 50%; margin-left: 6px;
+            min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+            border-radius: 99px; background: #FF453A; color: #fff;
+            font: 600 10px/16px var(--bodyfont); text-align: center;
+          }
+          .xo-tabitem .dot {
+            position: absolute; top: 4px; left: 50%; margin-left: 8px;
+            width: 8px; height: 8px; border-radius: 99px; background: #FF453A;
+          }
+          .xo-root { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+
+          /* "More" bottom sheet */
+          .xo-sheetscrim {
+            display: block; position: fixed; inset: 0; z-index: 95;
+            background: rgba(0,0,0,.5);
+            -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+            animation: xofade .2s ease both;
+          }
+          .xo-sheet {
+            display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 96;
+            background: var(--card); border-top: 1px solid var(--line);
+            border-radius: 20px 20px 0 0;
+            padding: 10px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+            animation: xosheet .28s cubic-bezier(.2,.8,.2,1) both;
+            max-height: 80dvh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+          }
+          @keyframes xosheet { from { transform: translateY(100%); } to { transform: none; } }
+          .xo-sheetgrab {
+            width: 36px; height: 4px; border-radius: 99px; background: var(--dash);
+            margin: 4px auto 14px;
+          }
+          .xo-sheetitem {
+            display: flex; align-items: center; gap: 12px; width: 100%;
+            background: none; border: none; border-radius: 12px;
+            padding: 14px 12px; color: var(--ink);
+            font: 500 16px var(--bodyfont); text-align: left; cursor: pointer;
+          }
+          .xo-sheetitem.on { color: var(--accent); }
+          .xo-sheetitem:active { background: rgba(var(--strong-rgb), .07); }
+          .xo-sheetitem svg { width: 22px; height: 22px; flex: none; }
+          .xo-sheetitem .ct { margin-left: auto; color: var(--faint); font-size: 14px; }
+
+          /* iOS-style sticky nav bar */
+          .xo-top {
+            position: sticky; top: 0; z-index: 40;
+            margin: calc(-14px - env(safe-area-inset-top, 0px)) -12px 10px;
+            padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+            background: color-mix(in srgb, var(--bg) 88%, transparent);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            backdrop-filter: saturate(180%) blur(20px);
+            border-bottom: 1px solid transparent;
+            transition: border-color .2s;
+          }
+          .xo-top.scrolled { border-bottom-color: var(--line); }
+          .xo-title { font-size: 17px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .xo-sheet, .xo-sheetscrim { animation: none; }
+        }
+
+        /* landscape phone */
+        @media (max-height: 460px) and (orientation: landscape) {
+          .xo-root { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+          .xo-kpis { grid-template-columns: repeat(4, 1fr); }
+          .xo-promptcard { display: none; }
+          .xo-composer textarea { min-height: 56px; }
+          .xo-tabbar { padding-top: 4px; }
+          .xo-tabitem { flex-direction: row; gap: 7px; min-height: 40px; font-size: 12px; }
+          .xo-tabitem svg { width: 19px; height: 19px; }
+        }
+
+        /* ==================== desktop: styled scrollbars ==================== */
+        @media (pointer: fine) {
+          .xo-root ::-webkit-scrollbar { width: 10px; height: 10px; }
+          .xo-root ::-webkit-scrollbar-track { background: transparent; }
+          .xo-root ::-webkit-scrollbar-thumb {
+            background: var(--dash); border-radius: 99px;
+            border: 3px solid transparent; background-clip: content-box;
+          }
+          .xo-root ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); background-clip: content-box; }
+          .xo-root { scrollbar-width: thin; scrollbar-color: var(--dash) transparent; }
+        }
       `}</style>
 
       <div className="xo-fx" aria-hidden="true"><i className="fx1" /><i className="fx2" /><i className="fx3" /></div>
@@ -4075,6 +4212,7 @@ Digest:
             {hasEntries && (
               <div className="xo-filterbar">
                 <input
+                  id="xo-journal-search"
                   className="xo-search"
                   type="text"
                   value={query}
@@ -4144,7 +4282,7 @@ Digest:
 
             {loaded && !hasEntries && (
               <div className="xo-empty">
-                <strong>{neon ? "The city is quiet. The page is empty." : "A clean page."}</strong>
+                <strong>A clean page.</strong>
                 Write your first entry above — or paste a photo or link straight into the box.
                 Start a line with @ai to get an answer saved into your journal.
                 {neon && <span className="jp">今夜、何を考えていますか</span>}
@@ -4214,7 +4352,7 @@ Digest:
                                   {(!seg.type || seg.type === "text") && (
                                     <span
                                       className="xo-hl"
-                                      style={{ background: e.bg, boxShadow: `inset 0 -2px 0 ${e.dot}88` }}
+                                      style={{ background: e.bg, boxShadow: `inset 0 -1px 0 ${e.dot}55` }}
                                     >
                                       <Linkify text={seg.text} />
                                     </span>
@@ -4489,6 +4627,74 @@ Digest:
 
       </div>
 
+      {/* ---------- phone bottom tab bar (CSS-gated to ≤700px) ---------- */}
+      <nav className="xo-tabbar" aria-label="Primary">
+        <button className={view === "journal" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("journal"); }}>
+          <NavIcon name="journal" /><span>Journal</span>
+        </button>
+        <button className={view === "schedule" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("schedule"); }}>
+          <NavIcon name="schedule" />{schedOpenCount > 0 && <span className="dot" />}<span>Schedule</span>
+        </button>
+        <button className={view === "goals" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("goals"); }}>
+          <NavIcon name="growth" /><span>Growth</span>
+        </button>
+        <button className={view === "ask" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("ask"); }}>
+          <NavIcon name="ask" /><span>{aiName || "Ask"}</span>
+        </button>
+        <button
+          className={["insights", "photos", "notepad", "trash", "members"].includes(view) || moreOpen ? "xo-tabitem on" : "xo-tabitem"}
+          onClick={() => { haptic("select"); setMoreOpen(true); }}
+        >
+          <NavIcon name="more" /><span>More</span>
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <>
+          <div className="xo-sheetscrim" onClick={() => setMoreOpen(false)} />
+          <div
+            className="xo-sheet"
+            ref={sheetRef}
+            role="dialog"
+            aria-label="More"
+            onTouchStart={(e) => { sheetDragY.current = e.touches[0].clientY; }}
+            onTouchMove={(e) => {
+              if (sheetDragY.current == null || !sheetRef.current) return;
+              const dy = e.touches[0].clientY - sheetDragY.current;
+              if (dy > 0) sheetRef.current.style.transform = `translateY(${dy}px)`;
+            }}
+            onTouchEnd={(e) => {
+              if (sheetRef.current) sheetRef.current.style.transform = "";
+              const dy = e.changedTouches[0].clientY - (sheetDragY.current || 0);
+              sheetDragY.current = null;
+              if (dy > 70) setMoreOpen(false);
+            }}
+          >
+            <div className="xo-sheetgrab" />
+            <button className={view === "insights" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => setView("insights")}>
+              <NavIcon name="insights" /><span>Insights</span>
+            </button>
+            <button className={view === "photos" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => setView("photos")}>
+              <NavIcon name="photos" /><span>Photos</span>{allPhotos.length > 0 && <span className="ct">{allPhotos.length}</span>}
+            </button>
+            <button className={view === "notepad" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => setView("notepad")}>
+              <NavIcon name="notepad" /><span>Notepad</span>
+            </button>
+            <button className={view === "trash" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => setView("trash")}>
+              <NavIcon name="deleted" /><span>Deleted</span>{trash.length > 0 && <span className="ct">{trash.length}</span>}
+            </button>
+            {isAdmin && (
+              <button className={view === "members" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => { setView("members"); loadMembers(); }}>
+                <NavIcon name="members" /><span>Members</span>
+              </button>
+            )}
+            <button className="xo-sheetitem" onClick={() => { setShowCustomize(true); setMoreOpen(false); }}>
+              <NavIcon name="customize" /><span>Customize</span>
+            </button>
+          </div>
+        </>
+      )}
+
       {lightbox && (
         <div className="xo-lightbox" onClick={() => setLightbox(null)}>
           <button className="xo-lightclose" aria-label="Close" onClick={() => setLightbox(null)}>×</button>
@@ -4749,6 +4955,13 @@ function AuthRoot() {
     const { data: sub } = window.__sb.auth.onAuthStateChange((_e, s) => setSession(s || null));
     return () => { sub && sub.subscription && sub.subscription.unsubscribe(); };
   }, []);
+
+  // Native: keep the splash up until React has decided auth, then fade it out.
+  useEffect(() => {
+    if (session === undefined) return;
+    const SP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen;
+    if (SP) SP.hide({ fadeOutDuration: 250 }).catch(() => {});
+  }, [session]);
 
   if (session === undefined) {
     return <div style={{ minHeight: "100vh", background: "#0a0b0e", color: "#7c8390",
