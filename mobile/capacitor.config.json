@@ -1,9 +1,21 @@
 {
   "appId": "com.jarrellherring.journal",
-  "appName": "Journal",
+  "appName": "Lucid AI Journal",
   "webDir": "www",
+  "backgroundColor": "#0a0b0e",
   "ios": {
-    "contentInset": "always",
-    "backgroundColor": "#0a0b0e"
+    "contentInset": "never",
+    "backgroundColor": "#0a0b0e",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "plugins": {
+    "Keyboard": { "resize": "native", "style": "dark", "resizeOnFullScreen": true },
+    "SplashScreen": {
+      "backgroundColor": "#0a0b0e",
+      "launchAutoHide": false,
+      "showSpinner": false
+    },
+    "StatusBar": { "style": "DARK", "backgroundColor": "#0a0b0e", "overlaysWebView": true }
   }
 }
