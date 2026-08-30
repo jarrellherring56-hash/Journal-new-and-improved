@@ -3260,33 +3260,19 @@ Digest:
           background: radial-gradient(ellipse, rgba(var(--strong-rgb), 0.05), transparent 70%); filter: blur(10px);
           animation: fxbreathe 12s ease-in-out infinite; }
 
-        /* Kiss Land — cinematic neon night: a nocturnal city skyline (the reference,
-           no text), a horizon glow that breathes behind it, and out-of-focus lights */
-        /* fx1: neon-rimmed skyline silhouette along the bottom */
-        .m-kissland .fx1 { left: 0; right: 0; bottom: 0; height: 240px; z-index: 2;
-          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.26) 0%, rgba(var(--accent-rgb), 0.05) 9%, var(--bg) 44%);
-          clip-path: polygon(0 100%, 0 56%, 7% 56%, 7% 36%, 12% 36%, 12% 61%, 18% 61%, 18% 23%,
-            23% 23%, 23% 51%, 30% 51%, 30% 41%, 36% 41%, 36% 69%, 42% 69%, 42% 31%, 48% 31%,
-            48% 59%, 55% 59%, 55% 19%, 60% 19%, 60% 49%, 67% 49%, 67% 39%, 73% 39%, 73% 63%,
-            80% 63%, 80% 29%, 86% 29%, 86% 53%, 93% 53%, 93% 43%, 100% 43%, 100% 100%); }
-        /* fx2: the city's neon glow rising off the horizon — breathes behind the skyline */
-        .m-kissland .fx2 { left: 0; right: 0; bottom: 0; height: 52vh; z-index: 1;
-          background:
-            radial-gradient(60% 100% at 22% 100%, rgba(var(--accent-rgb), 0.20), transparent 66%),
-            radial-gradient(54% 100% at 80% 100%, rgba(var(--strong-rgb), 0.12), transparent 70%),
-            linear-gradient(0deg, rgba(var(--accent-rgb), 0.12), transparent 84%);
-          animation: fxbreathe 14s ease-in-out infinite; }
-        /* fx3: out-of-focus city lights (bokeh) — distant, drifting up in the dark */
-        .m-kissland .fx3 { inset: 0; z-index: 3;
-          background:
-            radial-gradient(circle 3px at 15% 30%, rgba(var(--accent-rgb), 0.55), transparent 62%),
-            radial-gradient(circle 6px at 84% 18%, rgba(var(--accent-rgb), 0.26), transparent 62%),
-            radial-gradient(circle 2px at 70% 38%, rgba(var(--strong-rgb), 0.55), transparent 62%),
-            radial-gradient(circle 5px at 30% 50%, rgba(var(--accent-rgb), 0.22), transparent 62%),
-            radial-gradient(circle 2px at 92% 46%, rgba(var(--accent-rgb), 0.45), transparent 62%),
-            radial-gradient(circle 4px at 52% 12%, rgba(var(--accent-rgb), 0.20), transparent 62%);
-          filter: blur(1.4px);
-          animation: fxshimmer 7s ease-in-out infinite; }
+        /* Kiss Land — neon signage and light poles */
+        .m-kissland .fx1::before { content: "キス・ランド"; }
+        .m-kissland .fx1 { top: 110px; right: 34px; writing-mode: vertical-rl; font-family: 'Noto Sans JP', sans-serif;
+          font-weight: 700; font-size: 42px; letter-spacing: 0.35em; color: rgba(var(--accent-rgb), 0.10);
+          text-shadow: 0 0 24px rgba(var(--accent-rgb), 0.20);
+          animation: fxneon 9s linear infinite; }
+        .m-kissland .fx2 { top: 0; left: 7%; width: 1px; height: 42vh;
+          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.35), transparent);
+          box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.3);
+          animation: fxshimmer 4s ease-in-out infinite; }
+        .m-kissland .fx3 { top: 0; left: 11%; width: 1px; height: 26vh;
+          background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.22), transparent);
+          animation: fxshimmer 6s ease-in-out 1s infinite; }
 
         /* BBTM — gold haze and stage-light streaks */
         .m-madness .fx1 { top: -140px; left: 28%; width: 640px; height: 320px;
@@ -3337,7 +3323,7 @@ Digest:
 
         /* featured shapes need open margins — hide them when the shell fills the window */
         @media (max-width: 1360px) {
-          .m-starboy .fx1, .m-trilogy .fx1, .m-trilogy .fx2 { display: none; }
+          .m-starboy .fx1, .m-kissland .fx1, .m-trilogy .fx1, .m-trilogy .fx2 { display: none; }
         }
 
         /* Dawn FM — radio waves and first light */
@@ -3385,6 +3371,7 @@ Digest:
           <div className="xo-brand">
             <span className="xo-icon"><ThemeIcon theme={settings.theme} /></span>
             <div>
+              {neon && <p className="xo-eyebrow">キス・ランド</p>}
               <h1 className="xo-title">{settings.name || "Journal"}</h1>
             </div>
           </div>
