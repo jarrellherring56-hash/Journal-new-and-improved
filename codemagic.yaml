@@ -52,6 +52,30 @@ workflows:
           # voice-to-text records audio via getUserMedia, which WKWebView blocks
           # unless the app declares why it needs the microphone
           plutil -replace NSMicrophoneUsageDescription -string "Lucid uses the microphone so you can speak your journal entries instead of typing." "$PLIST"
+      - name: Add push-notification entitlement (APNs)
+        script: |
+          set -e
+          # The native app registers for APNs; without the aps-environment
+          # entitlement, PushNotifications.register() fails on device. Capacitor's
+          # generated project has no entitlements file, so create one and point the
+          # App target's CODE_SIGN_ENTITLEMENTS at it (both build configs).
+          # NOTE: this build will only SIGN successfully once the App ID
+          # (com.jarrellherring.journal) has the Push Notifications capability
+          # enabled in the Apple Developer portal — otherwise the profile won't
+          # carry aps-environment and signing fails.
+          ENT="mobile/ios/App/App/App.entitlements"
+          rm -f "$ENT"
+          # PlistBuddy creates the file if it doesn't exist yet.
+          /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENT"
+          plutil -lint "$ENT"
+          # xcodeproj gem ships with CocoaPods, so it's already available.
+          ruby -e '
+            require "xcodeproj"
+            proj = Xcodeproj::Project.open("mobile/ios/App/App.xcodeproj")
+            t = proj.targets.find { |x| x.name == "App" }
+            t.build_configurations.each { |c| c.build_settings["CODE_SIGN_ENTITLEMENTS"] = "App/App.entitlements" }
+            proj.save
+          '
       - name: Install CocoaPods dependencies
         script: |
           set -e
