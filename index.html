@@ -1251,6 +1251,7 @@ function XOJournal() {
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [recap, setRecap] = useState("");
   const [recapBusy, setRecapBusy] = useState(false);
   const [wrapped, setWrapped] = useState(null);
@@ -1266,7 +1267,11 @@ function XOJournal() {
   const [sugBusy, setSugBusy] = useState(false);
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
-  const recRef = useRef(null);
+  const recRef = useRef(null);            // legacy Web Speech fallback
+  const mediaRecRef = useRef(null);       // MediaRecorder for accurate Whisper capture
+  const audioChunksRef = useRef([]);
+  const micStreamRef = useRef(null);
+  const micCapRef = useRef(null);         // safety auto-stop timer
   const promptRequested = useRef(false);
   const shownAngleRef = useRef(null); // which prompt angle is on screen, for the silent learn-loop
 
@@ -1647,31 +1652,78 @@ Their week:
     setPendingImgs((prev) => prev.filter((p) => p.id !== id));
 
   // ----- voice input -----
-  const toggleMic = () => {
-    if (listening) {
-      try { recRef.current && recRef.current.stop(); } catch (e) { /* already stopped */ }
-      setListening(false);
-      return;
+  // Records audio and transcribes it server-side with Whisper (accurate, and
+  // works in the native app where the browser SpeechRecognition API does not).
+  // Falls back to Web Speech only when recording isn't available at all.
+  const canRecord = () =>
+    typeof MediaRecorder !== "undefined" &&
+    navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function";
+
+  const pickAudioMime = () => {
+    if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
+    const opts = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg;codecs=opus"];
+    for (const m of opts) { if (MediaRecorder.isTypeSupported(m)) return m; }
+    return "";
+  };
+
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onloadend = () => { const s = String(r.result || ""); resolve(s.slice(s.indexOf(",") + 1)); };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+
+  const transcribeBlob = async (blob) => {
+    setTranscribing(true); setError("");
+    try {
+      const audio = await blobToBase64(blob);
+      const token = window.__session && window.__session.access_token;
+      const res = await fetch(API_BASE + "/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ audio, mime: blob.type || "audio/webm" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error || "Couldn't transcribe that — try again."); return; }
+      const t = String(data.text || "").trim();
+      if (t) {
+        setDraft((d) => (d ? d.replace(/\s+$/, "") + " " : "") + t);
+        textareaRef.current && textareaRef.current.focus();
+      } else {
+        setError("Didn't catch anything — try speaking a little longer.");
+      }
+    } catch (e) {
+      setError("Couldn't reach the transcription service — check your connection.");
+    } finally {
+      setTranscribing(false);
     }
+  };
+
+  const stopMicStream = () => {
+    try { micStreamRef.current && micStreamRef.current.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    micStreamRef.current = null;
+    if (micCapRef.current) { clearTimeout(micCapRef.current); micCapRef.current = null; }
+  };
+
+  // Legacy path: only used when the device can't record audio at all.
+  const startWebSpeech = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      setError("Voice input isn't supported in this browser — try Chrome.");
-      return;
-    }
+    if (!SR) { setError("Voice input isn't supported on this device."); return; }
     try {
       const r = new SR();
       r.continuous = true;
       r.interimResults = false;
+      r.lang = (navigator.language || "en-US");
       r.onresult = (e) => {
         let t = "";
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (e.results[i].isFinal) t += e.results[i][0].transcript;
         }
-        if (t) setDraft((d) => (d ? d + " " : "") + t.trim());
+        if (t) setDraft((d) => (d ? d.replace(/\s+$/, "") + " " : "") + t.trim());
       };
       r.onerror = (e) => {
         setListening(false);
-        if (e.error === "not-allowed") setError("Microphone access was blocked — allow it in your browser settings.");
+        if (e.error === "not-allowed") setError("Microphone access was blocked — allow it in your settings.");
       };
       r.onend = () => setListening(false);
       r.start();
@@ -1680,6 +1732,58 @@ Their week:
       setError("");
     } catch (e) {
       setError("Couldn't start the microphone.");
+    }
+  };
+
+  const toggleMic = async () => {
+    // Stop an in-progress capture.
+    if (listening) {
+      if (mediaRecRef.current) {
+        try { if (mediaRecRef.current.state !== "inactive") mediaRecRef.current.stop(); } catch (e) {}
+      } else if (recRef.current) {
+        try { recRef.current.stop(); } catch (e) {}
+      }
+      setListening(false);
+      return;
+    }
+    if (transcribing) return;
+
+    if (!canRecord()) return startWebSpeech();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      const mime = pickAudioMime();
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data && e.data.size) audioChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stopMicStream();
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        if (!chunks.length) return;
+        const blob = new Blob(chunks, { type: mr.mimeType || mime || "audio/webm" });
+        await transcribeBlob(blob);
+      };
+      mr.start();
+      mediaRecRef.current = mr;
+      setListening(true);
+      setError("");
+      // safety cap: stop after 2 minutes so a forgotten recording can't run away
+      micCapRef.current = setTimeout(() => {
+        try { if (mr.state !== "inactive") mr.stop(); } catch (e) {}
+        setListening(false);
+      }, 120000);
+    } catch (e) {
+      stopMicStream();
+      setListening(false);
+      if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) {
+        setError("Microphone access was blocked — allow it in your settings.");
+      } else if (e && e.name === "NotFoundError") {
+        setError("No microphone found on this device.");
+      } else {
+        setError("Couldn't start the microphone.");
+      }
     }
   };
 
@@ -4193,10 +4297,12 @@ Digest:
                   <button
                     className={listening ? "xo-mic live" : "xo-mic"}
                     onClick={toggleMic}
-                    disabled={busy}
-                    title={listening ? "Stop listening" : "Speak your entry"}
+                    disabled={busy || transcribing}
+                    title={listening ? "Stop and transcribe" : "Speak your entry"}
                   >
-                    {listening ? "● Listening" : "🎤 Talk"}
+                    {transcribing
+                      ? (<><span className="xo-spin" />Transcribing…</>)
+                      : listening ? "● Stop" : "🎤 Talk"}
                   </button>
                   <button className="xo-ask" onClick={askAI} disabled={busy || !draft.trim()}>
                     {busy && busyMode === "ask" ? (<><span className="xo-spin" />Thinking…</>) : "Ask AI"}
