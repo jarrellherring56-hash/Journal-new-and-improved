@@ -189,6 +189,18 @@ const EMOTIONS = {
   nostalgic:  { label: "Nostalgic",  dot: "#B689FF", bg: "rgba(182,137,255,0.075)", text: "#CFAFFF" },
   hopeful:    { label: "Hopeful",    dot: "#35E0E6", bg: "rgba(53,224,230,0.075)",  text: "#7FEBEF" },
   frustrated: { label: "Frustrated", dot: "#E89A5C", bg: "rgba(232,154,92,0.075)",  text: "#F0BA8E" },
+  grateful:   { label: "Grateful",   dot: "#F3C06A", bg: "rgba(243,192,106,0.075)", text: "#F8D79A" },
+  content:    { label: "Content",    dot: "#86CBA6", bg: "rgba(134,203,166,0.075)", text: "#ABDBC3" },
+  lonely:     { label: "Lonely",     dot: "#6C7FC0", bg: "rgba(108,127,192,0.075)", text: "#9AA8DA" },
+  overwhelmed:{ label: "Overwhelmed",dot: "#E0664B", bg: "rgba(224,102,75,0.075)",  text: "#EE9581" },
+  proud:      { label: "Proud",      dot: "#C98A2E", bg: "rgba(201,138,46,0.075)",  text: "#E0B267" },
+  loved:      { label: "Loved",      dot: "#FF7EA8", bg: "rgba(255,126,168,0.075)", text: "#FFA9C6" },
+  tired:      { label: "Tired",      dot: "#8A93A6", bg: "rgba(138,147,166,0.075)", text: "#B4BBC8" },
+  insecure:   { label: "Insecure",   dot: "#A98CD0", bg: "rgba(169,140,208,0.075)", text: "#C7B4E2" },
+  motivated:  { label: "Motivated",  dot: "#9FD44E", bg: "rgba(159,212,78,0.075)",  text: "#C2E389" },
+  guilty:     { label: "Guilty",     dot: "#C77B6E", bg: "rgba(199,123,110,0.075)", text: "#DDA79D" },
+  relieved:   { label: "Relieved",   dot: "#7FD8C4", bg: "rgba(127,216,196,0.075)", text: "#A9E6D8" },
+  inspired:   { label: "Inspired",   dot: "#B15CF0", bg: "rgba(177,92,240,0.075)",  text: "#CC94F6" },
   neutral:    { label: "Neutral",    dot: "#9B93B0", bg: "rgba(155,147,176,0.075)", text: "#BDB6CE" },
 };
 const emotionOf = (e) => EMOTIONS[(e || "").toLowerCase()] || EMOTIONS.neutral;
@@ -202,7 +214,7 @@ const segTags = (seg) => {
 };
 
 // mood valence for the trend line: brighter (+2) … heavier (−2)
-const VALENCE = { happy: 2, excited: 2, hopeful: 1.5, calm: 1, nostalgic: 0.5, neutral: 0, anxious: -1, frustrated: -1, sad: -1.5, angry: -2 };
+const VALENCE = { happy: 2, excited: 2, loved: 2, proud: 1.8, grateful: 1.8, inspired: 1.5, hopeful: 1.5, motivated: 1.5, relieved: 1.2, content: 1.2, calm: 1, nostalgic: 0.5, neutral: 0, tired: -0.5, insecure: -1, anxious: -1, frustrated: -1, lonely: -1.3, guilty: -1.3, sad: -1.5, overwhelmed: -1.5, angry: -2 };
 
 // ---------- privacy lock (per-device, stores only a hash) ----------
 const PIN_KEY = "daybook:pin:v1";
@@ -542,7 +554,7 @@ async function classifyEntry(text, vibeText, existingTopics = []) {
 For each segment return:
 - "text": the segment's exact text from the entry
 - "tags": an array of 2-4 SPECIFIC tags describing what this segment is really about
-- "emotion": exactly one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral${topicHint}
+- "emotion": exactly one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, grateful, content, lonely, overwhelmed, proud, loved, tired, insecure, motivated, guilty, relieved, inspired, neutral${topicHint}
 
 TAG RULES — this is the most important part:
 - Each tag is 1-3 words, Title Case.
@@ -580,7 +592,7 @@ Entry:
 }
 
 async function answerQuestion(question, identity = "", web = false) {
-  const res = await callClaudeRaw(`You are the AI inside someone's personal journal. ${identity} Answer their question below helpfully and warmly in a few sentences (under 120 words).${web ? " If answering well needs current information (news, prices, recent events, anything after your training), search the web first and answer from what you find." : ""} Then, on the LAST line only, output a JSON object like {"topic": "1-3 word topic label", "emotion": "one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, neutral"} describing the question. Do not use markdown.
+  const res = await callClaudeRaw(`You are the AI inside someone's personal journal. ${identity} Answer their question below helpfully and warmly in a few sentences (under 120 words).${web ? " If answering well needs current information (news, prices, recent events, anything after your training), search the web first and answer from what you find." : ""} Then, on the LAST line only, output a JSON object like {"topic": "1-3 word topic label", "emotion": "one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, grateful, content, lonely, overwhelmed, proud, loved, tired, insecure, motivated, guilty, relieved, inspired, neutral"} describing the question. Do not use markdown.
 
 Question:
 """${question}"""`, 1000, web);
