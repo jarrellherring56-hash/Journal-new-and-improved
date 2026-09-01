@@ -47,11 +47,29 @@ workflows:
           # the App Store, so use a unique home-screen name instead.
           plutil -replace CFBundleDisplayName -string "Lucid AI Journal" "$PLIST"
           plutil -replace CFBundleName        -string "Lucid AI Journal" "$PLIST"
-          # bump the build number so Apple never sees a duplicate (builds 2, 3, 4 used)
-          plutil -replace CFBundleVersion     -string "5"          "$PLIST"
+          # bump the build number so Apple never sees a duplicate (builds 2-5 used)
+          plutil -replace CFBundleVersion     -string "6"          "$PLIST"
           # voice-to-text records audio via getUserMedia, which WKWebView blocks
           # unless the app declares why it needs the microphone
           plutil -replace NSMicrophoneUsageDescription -string "Lucid uses the microphone so you can speak your journal entries instead of typing." "$PLIST"
+      - name: Set the app icon (Lucid balloons)
+        script: |
+          set -e
+          # Overwrite every icon in the generated Xcode AppIcon set with our
+          # master, resized to whatever pixel size each slot expects. Works
+          # whether the template uses a single 1024 icon or legacy multi-sizes.
+          ICONSET="mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          MASTER="icon-1024.png"
+          if [ -d "$ICONSET" ]; then
+            for f in "$ICONSET"/*.png; do
+              [ -e "$f" ] || continue
+              W=$(sips -g pixelWidth "$f" 2>/dev/null | awk '/pixelWidth/{print $2}')
+              if [ -n "$W" ]; then sips -z "$W" "$W" "$MASTER" --out "$f" >/dev/null; else cp "$MASTER" "$f"; fi
+            done
+            echo "App icon updated ($(ls "$ICONSET"/*.png | wc -l) file(s))."
+          else
+            echo "AppIcon set not found at $ICONSET" >&2; exit 1
+          fi
       - name: Add push-notification entitlement (APNs)
         script: |
           set -e
