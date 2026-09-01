@@ -189,18 +189,18 @@ const EMOTIONS = {
   nostalgic:  { label: "Nostalgic",  dot: "#B689FF", bg: "rgba(182,137,255,0.075)", text: "#CFAFFF" },
   hopeful:    { label: "Hopeful",    dot: "#35E0E6", bg: "rgba(53,224,230,0.075)",  text: "#7FEBEF" },
   frustrated: { label: "Frustrated", dot: "#E89A5C", bg: "rgba(232,154,92,0.075)",  text: "#F0BA8E" },
-  grateful:   { label: "Grateful",   dot: "#F3C06A", bg: "rgba(243,192,106,0.075)", text: "#F8D79A" },
-  content:    { label: "Content",    dot: "#86CBA6", bg: "rgba(134,203,166,0.075)", text: "#ABDBC3" },
-  lonely:     { label: "Lonely",     dot: "#6C7FC0", bg: "rgba(108,127,192,0.075)", text: "#9AA8DA" },
+  grateful:   { label: "Grateful",   dot: "#B8A238", bg: "rgba(184,162,56,0.075)",  text: "#DAC86E" },
+  content:    { label: "Content",    dot: "#4FB06A", bg: "rgba(79,176,106,0.075)",  text: "#8FD3A6" },
+  lonely:     { label: "Lonely",     dot: "#4E5FB0", bg: "rgba(78,95,176,0.075)",   text: "#97A6DE" },
   overwhelmed:{ label: "Overwhelmed",dot: "#E0664B", bg: "rgba(224,102,75,0.075)",  text: "#EE9581" },
-  proud:      { label: "Proud",      dot: "#C98A2E", bg: "rgba(201,138,46,0.075)",  text: "#E0B267" },
+  proud:      { label: "Proud",      dot: "#9C6B1E", bg: "rgba(156,107,30,0.075)",  text: "#D3A959" },
   loved:      { label: "Loved",      dot: "#FF7EA8", bg: "rgba(255,126,168,0.075)", text: "#FFA9C6" },
-  tired:      { label: "Tired",      dot: "#8A93A6", bg: "rgba(138,147,166,0.075)", text: "#B4BBC8" },
-  insecure:   { label: "Insecure",   dot: "#A98CD0", bg: "rgba(169,140,208,0.075)", text: "#C7B4E2" },
+  tired:      { label: "Tired",      dot: "#4C5F76", bg: "rgba(76,95,118,0.075)",   text: "#9DB0C6" },
+  insecure:   { label: "Insecure",   dot: "#A96FA0", bg: "rgba(169,111,160,0.075)", text: "#CFA3C8" },
   motivated:  { label: "Motivated",  dot: "#9FD44E", bg: "rgba(159,212,78,0.075)",  text: "#C2E389" },
   guilty:     { label: "Guilty",     dot: "#C77B6E", bg: "rgba(199,123,110,0.075)", text: "#DDA79D" },
-  relieved:   { label: "Relieved",   dot: "#7FD8C4", bg: "rgba(127,216,196,0.075)", text: "#A9E6D8" },
-  inspired:   { label: "Inspired",   dot: "#B15CF0", bg: "rgba(177,92,240,0.075)",  text: "#CC94F6" },
+  relieved:   { label: "Relieved",   dot: "#8FD0F0", bg: "rgba(143,208,240,0.075)", text: "#BBE4F7" },
+  inspired:   { label: "Inspired",   dot: "#C24DE8", bg: "rgba(194,77,232,0.075)",  text: "#D98FF0" },
   neutral:    { label: "Neutral",    dot: "#9B93B0", bg: "rgba(155,147,176,0.075)", text: "#BDB6CE" },
 };
 const emotionOf = (e) => EMOTIONS[(e || "").toLowerCase()] || EMOTIONS.neutral;
@@ -555,6 +555,21 @@ For each segment return:
 - "text": the segment's exact text from the entry
 - "tags": an array of 2-4 SPECIFIC tags describing what this segment is really about
 - "emotion": exactly one of: happy, sad, anxious, calm, excited, angry, nostalgic, hopeful, frustrated, grateful, content, lonely, overwhelmed, proud, loved, tired, insecure, motivated, guilty, relieved, inspired, neutral${topicHint}
+
+EMOTION RULES — accuracy here matters as much as the tags. Pick the emotion the WRITER is actually feeling in that segment, not the mood of the topic:
+- Return the single dominant felt emotion. If two feelings genuinely blend in one thought, pick the stronger; if the segment clearly swings between two, that's your cue to split it into separate segments.
+- Use "neutral" ONLY for flat, factual lines with no discernible feeling (logistics, plans, to-do lists, times). If any real feeling is present — even subtle — choose it over neutral. Never use neutral as a lazy default.
+- Judge from how it's written (word choice, intensity, what they dwell on), not just the subject. Cues for each:
+  happy = light, glad right now · excited = buzzing, can't-wait energy · content = quietly satisfied, "this is enough" · grateful = thankful, appreciating something or someone · proud = earned an accomplishment, did something hard · loved = cared for, close to someone · calm = settled, at peace · relieved = a tension just lifted · hopeful = expecting things to get better · motivated = driven, ready to act · inspired = creatively sparked, moved by an idea · nostalgic = fond ache for the past · sad = low, hurting, loss (grief counts as sad) · lonely = disconnected, missing connection (even around people) · anxious = worried about what MIGHT happen · overwhelmed = too much at once, can't keep up · frustrated = blocked, things not working · angry = genuinely angry, wronged (stronger than frustrated) · insecure = self-doubt, not good enough · guilty = did something wrong, regret · tired = drained, depleted energy
+- Disambiguate the close ones deliberately:
+  • anxious vs overwhelmed → fear of the FUTURE vs buried by the PRESENT load
+  • frustrated vs angry → annoyed/blocked vs real anger at someone or something
+  • sad vs lonely → general hurt/low vs specifically missing people/connection
+  • tired vs sad → low ENERGY vs real emotional pain (only use sad if it hurts)
+  • content vs happy vs calm → satisfied/"enough" vs actively glad vs relaxed
+  • grateful vs loved → thankful FOR something vs feeling cared about BY someone
+  • proud vs happy → earned accomplishment vs general good feeling
+  • insecure vs anxious → doubting YOURSELF vs dreading an outcome
 
 TAG RULES — this is the most important part:
 - Each tag is 1-3 words, Title Case.
