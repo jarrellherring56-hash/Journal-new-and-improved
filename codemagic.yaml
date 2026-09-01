@@ -47,8 +47,8 @@ workflows:
           # the App Store, so use a unique home-screen name instead.
           plutil -replace CFBundleDisplayName -string "Lucid AI Journal" "$PLIST"
           plutil -replace CFBundleName        -string "Lucid AI Journal" "$PLIST"
-          # bump the build number so Apple never sees a duplicate (builds 2-5 used)
-          plutil -replace CFBundleVersion     -string "6"          "$PLIST"
+          # bump the build number so Apple never sees a duplicate (builds 2-6 used)
+          plutil -replace CFBundleVersion     -string "7"          "$PLIST"
           # voice-to-text records audio via getUserMedia, which WKWebView blocks
           # unless the app declares why it needs the microphone
           plutil -replace NSMicrophoneUsageDescription -string "Lucid uses the microphone so you can speak your journal entries instead of typing." "$PLIST"
@@ -86,7 +86,9 @@ workflows:
           # PlistBuddy creates the file if it doesn't exist yet.
           /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENT"
           plutil -lint "$ENT"
-          # xcodeproj gem ships with CocoaPods, so it's already available.
+          # xcodeproj ships with CocoaPods, but the default ruby may not see it —
+          # make sure it's installed before we require it.
+          gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document >/dev/null 2>&1 || sudo gem install xcodeproj --no-document >/dev/null 2>&1 || true
           ruby -e '
             require "xcodeproj"
             proj = Xcodeproj::Project.open("mobile/ios/App/App.xcodeproj")
@@ -106,6 +108,15 @@ workflows:
           # generate a fresh RSA private key for a new distribution certificate
           # (the account has none; the CLI needs a key to create the cert from)
           openssl genrsa -out /tmp/cert_key.pem 2048
+          # The existing App Store profile was created before Push Notifications
+          # was enabled on the App ID, so it lacks the aps-environment entitlement
+          # and the archive step fails to sign. Delete existing profiles so the
+          # fetch below regenerates a fresh one that includes Push. Best-effort:
+          # if nothing matches, the loop simply does nothing.
+          for pid in $(app-store-connect list-profiles --json 2>/dev/null | jq -r '.[].id // empty' 2>/dev/null); do
+            echo "Deleting stale provisioning profile $pid"
+            app-store-connect delete-profile "$pid" 2>/dev/null || true
+          done
           # fetch-signing-files with --certificate-key + --create makes the
           # distribution certificate (from this key) AND the App Store
           # provisioning profile for the bundle id, if they don't exist yet
