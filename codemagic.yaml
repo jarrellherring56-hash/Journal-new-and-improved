@@ -47,8 +47,8 @@ workflows:
           # the App Store, so use a unique home-screen name instead.
           plutil -replace CFBundleDisplayName -string "Lucid AI Journal" "$PLIST"
           plutil -replace CFBundleName        -string "Lucid AI Journal" "$PLIST"
-          # bump the build number so Apple never sees a duplicate (builds 2-8 used)
-          plutil -replace CFBundleVersion     -string "9"          "$PLIST"
+          # bump the build number so Apple never sees a duplicate (builds 2-9 used)
+          plutil -replace CFBundleVersion     -string "10"         "$PLIST"
           # voice-to-text records audio via getUserMedia, which WKWebView blocks
           # unless the app declares why it needs the microphone
           plutil -replace NSMicrophoneUsageDescription -string "Lucid uses the microphone so you can speak your journal entries instead of typing." "$PLIST"
