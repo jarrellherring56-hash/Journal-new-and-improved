@@ -85,12 +85,26 @@ workflows:
         script: |
           set -e
           keychain initialize
-          # generate a fresh RSA private key for a new distribution certificate
-          # (the account has none; the CLI needs a key to create the cert from)
+          # Apple caps Distribution certificates and returns 409 "you already
+          # have a current Distribution certificate" once the cap is hit. This
+          # pipeline generates a fresh key each run and can't reuse the existing
+          # certs (their private keys were never saved), so revoke them first via
+          # the App Store Connect API key. Safe: builds already uploaded to
+          # TestFlight/App Store stay validly signed after revocation. Try a few
+          # flag spellings across codemagic-cli-tools versions; best-effort.
+          IDS=$(app-store-connect list-certificates --type IOS_DISTRIBUTION --json 2>/dev/null | jq -r '.[].id // empty' 2>/dev/null)
+          [ -z "$IDS" ] && IDS=$(app-store-connect list-certificates --json 2>/dev/null | jq -r '.[].id // empty' 2>/dev/null)
+          echo "Distribution certificates to revoke: ${IDS:-none}"
+          for cid in $IDS; do
+            echo "Revoking certificate $cid"
+            app-store-connect delete-certificate "$cid" 2>/dev/null \
+              || app-store-connect delete-certificate "$cid" --yes 2>/dev/null || true
+          done
+          # generate a fresh RSA private key for the new distribution certificate
           openssl genrsa -out /tmp/cert_key.pem 2048
           # fetch-signing-files with --certificate-key + --create makes the
           # distribution certificate (from this key) AND the App Store
-          # provisioning profile for the bundle id, if they don't exist yet
+          # provisioning profile for the bundle id
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --certificate-key=@file:/tmp/cert_key.pem \
