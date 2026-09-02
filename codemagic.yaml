@@ -96,16 +96,19 @@ workflows:
           # hiccup can't abort the build (a false `test &&` under set -e was what
           # killed the previous run). Output is printed so failures are visible.
           set +e
-          # List ALL certificates (no --type filter): the account's distribution
-          # certs are Apple's newer "DISTRIBUTION" type, which an IOS_DISTRIBUTION
-          # filter misses. Revoke each so --create won't 409. Best-effort.
-          app-store-connect list-certificates --json > /tmp/certs.json 2>/tmp/certs.err
-          echo "--- list-certificates stderr (if any) ---"; cat /tmp/certs.err 2>/dev/null
-          echo "--- list-certificates output (head) ---"; head -c 900 /tmp/certs.json 2>/dev/null; echo
-          IDS=$(jq -r '.[].id // empty' /tmp/certs.json 2>/dev/null)
+          # Revoke ALL existing distribution certs so --create won't 409. Use the
+          # CURRENT CLI form (`certificates list/delete`); the legacy
+          # `list-certificates` prints a deprecation notice into stdout that breaks
+          # JSON parsing. `sed -n '/^\[/,$p'` strips any leading non-JSON just in
+          # case. Best-effort (set +e) so a hiccup can't abort the build.
+          app-store-connect certificates list --json > /tmp/certs.json 2>/tmp/certs.err
+          echo "--- certificates list stderr ---"; cat /tmp/certs.err 2>/dev/null
+          IDS=$(sed -n '/^\[/,$p' /tmp/certs.json | jq -r '.[].id // empty' 2>/dev/null)
           echo "--- certificate IDs: ${IDS:-none} ---"
           for cid in $IDS; do
-            if app-store-connect delete-certificate "$cid"; then echo "revoked $cid"; else echo "FAILED to revoke $cid"; fi
+            if app-store-connect certificates delete "$cid" --yes; then echo "revoked $cid";
+            elif app-store-connect certificates delete "$cid"; then echo "revoked $cid";
+            else echo "FAILED to revoke $cid"; fi
           done
           set -e
           # generate a fresh RSA private key for the new distribution certificate
