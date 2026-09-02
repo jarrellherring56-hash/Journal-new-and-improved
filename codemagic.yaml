@@ -92,14 +92,22 @@ workflows:
           # the App Store Connect API key. Safe: builds already uploaded to
           # TestFlight/App Store stay validly signed after revocation. Try a few
           # flag spellings across codemagic-cli-tools versions; best-effort.
-          IDS=$(app-store-connect list-certificates --type IOS_DISTRIBUTION --json 2>/dev/null | jq -r '.[].id // empty' 2>/dev/null)
-          [ -z "$IDS" ] && IDS=$(app-store-connect list-certificates --json 2>/dev/null | jq -r '.[].id // empty' 2>/dev/null)
-          echo "Distribution certificates to revoke: ${IDS:-none}"
+          # Best-effort cert cleanup, guarded with `set +e` so a listing/deleting
+          # hiccup can't abort the build (a false `test &&` under set -e was what
+          # killed the previous run). Output is printed so failures are visible.
+          set +e
+          app-store-connect list-certificates --type IOS_DISTRIBUTION --json > /tmp/certs.json 2>/tmp/certs.err
+          if [ ! -s /tmp/certs.json ]; then
+            app-store-connect list-certificates --json > /tmp/certs.json 2>>/tmp/certs.err
+          fi
+          echo "--- list-certificates stderr (if any) ---"; cat /tmp/certs.err 2>/dev/null
+          IDS=$(jq -r '.[].id // empty' /tmp/certs.json 2>/dev/null)
+          echo "--- distribution certificate IDs: ${IDS:-none} ---"
           for cid in $IDS; do
             echo "Revoking certificate $cid"
-            app-store-connect delete-certificate "$cid" 2>/dev/null \
-              || app-store-connect delete-certificate "$cid" --yes 2>/dev/null || true
+            app-store-connect delete-certificate "$cid"
           done
+          set -e
           # generate a fresh RSA private key for the new distribution certificate
           openssl genrsa -out /tmp/cert_key.pem 2048
           # fetch-signing-files with --certificate-key + --create makes the
