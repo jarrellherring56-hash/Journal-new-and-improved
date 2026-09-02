@@ -3655,10 +3655,6 @@ Digest:
             <button className={view === "notepad" ? "xo-tab on" : "xo-tab"} onClick={() => setView("notepad")}>Notepad</button>
             <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => setView("ask")}>{aiName || "Ask"}</button>
             <button className={view === "insights" ? "xo-tab on" : "xo-tab"} onClick={() => setView("insights")}>Insights</button>
-            {isAdmin && (
-              <button className={view === "members" ? "xo-tab on" : "xo-tab"}
-                onClick={() => { setView("members"); loadMembers(); }}>Members</button>
-            )}
             <button className={view === "trash" ? "xo-tab on" : "xo-tab"} onClick={() => setView("trash")}>
               Deleted{trash.length > 0 ? ` (${trash.length})` : ""}
             </button>
@@ -4816,11 +4812,6 @@ Digest:
             <button className={view === "trash" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => setView("trash")}>
               <NavIcon name="deleted" /><span>Deleted</span>{trash.length > 0 && <span className="ct">{trash.length}</span>}
             </button>
-            {isAdmin && (
-              <button className={view === "members" ? "xo-sheetitem on" : "xo-sheetitem"} onClick={() => { setView("members"); loadMembers(); }}>
-                <NavIcon name="members" /><span>Members</span>
-              </button>
-            )}
             <button className="xo-sheetitem" onClick={() => { setShowCustomize(true); setMoreOpen(false); }}>
               <NavIcon name="customize" /><span>Customize</span>
             </button>
