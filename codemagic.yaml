@@ -96,16 +96,16 @@ workflows:
           # hiccup can't abort the build (a false `test &&` under set -e was what
           # killed the previous run). Output is printed so failures are visible.
           set +e
-          app-store-connect list-certificates --type IOS_DISTRIBUTION --json > /tmp/certs.json 2>/tmp/certs.err
-          if [ ! -s /tmp/certs.json ]; then
-            app-store-connect list-certificates --json > /tmp/certs.json 2>>/tmp/certs.err
-          fi
+          # List ALL certificates (no --type filter): the account's distribution
+          # certs are Apple's newer "DISTRIBUTION" type, which an IOS_DISTRIBUTION
+          # filter misses. Revoke each so --create won't 409. Best-effort.
+          app-store-connect list-certificates --json > /tmp/certs.json 2>/tmp/certs.err
           echo "--- list-certificates stderr (if any) ---"; cat /tmp/certs.err 2>/dev/null
+          echo "--- list-certificates output (head) ---"; head -c 900 /tmp/certs.json 2>/dev/null; echo
           IDS=$(jq -r '.[].id // empty' /tmp/certs.json 2>/dev/null)
-          echo "--- distribution certificate IDs: ${IDS:-none} ---"
+          echo "--- certificate IDs: ${IDS:-none} ---"
           for cid in $IDS; do
-            echo "Revoking certificate $cid"
-            app-store-connect delete-certificate "$cid"
+            if app-store-connect delete-certificate "$cid"; then echo "revoked $cid"; else echo "FAILED to revoke $cid"; fi
           done
           set -e
           # generate a fresh RSA private key for the new distribution certificate
