@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Journal — Privacy Policy</title>
+<title>Lucid Privacy Policy</title>
 <style>
   body { margin: 0; background: #0a0b0e; color: #d7dedc; font-family: 'Inter', system-ui, sans-serif;
     line-height: 1.65; padding: 40px 20px 80px; }
@@ -20,55 +20,78 @@
 </head>
 <body>
 <main>
-  <h1><span class="dot"></span>Journal — Privacy Policy</h1>
-  <p class="updated">Last updated: August 2026</p>
+  <h1><span class="dot"></span>Lucid: AI Journal — Privacy Policy</h1>
+  <p class="updated">Last updated: September 24, 2026</p>
 
-  <p>Journal is a private journaling app. This policy explains, in plain language, what we collect, how it's used, and the choices you have. We've tried to be honest rather than reassuring.</p>
+  <p>Lucid is a private journaling app. This policy explains, in plain language, what we collect, how we collect it, every way it is used, who it is shared with, and the choices you have. We have tried to be honest rather than reassuring.</p>
 
-  <h2>What we collect</h2>
+  <h2>What we collect, and how</h2>
   <ul>
-    <li><strong>Your account</strong> — the email address and password you sign up with.</li>
-    <li><strong>What you write</strong> — your journal entries, notes, schedule items, goals, and any photos you add.</li>
-    <li><strong>Derived data</strong> — mood/emotion labels and topic tags the app generates from your entries.</li>
-    <li><strong>Notification data</strong> — if you turn on reminders, a device push token and your timezone.</li>
+    <li><strong>Account details</strong>: the email address and password you enter when you sign up. Passwords are stored hashed by our authentication provider.</li>
+    <li><strong>What you write</strong>: journal entries, notes, schedule items, goals, and questions you ask the AI, collected when you type or save them in the app.</li>
+    <li><strong>Photos</strong>: only photos you choose to attach with “+ Photo” (from your camera or library). They are resized on your device and stored with your journal.</li>
+    <li><strong>Voice recordings</strong>: only while you use Talk (voice-to-text), and only if you have allowed AI features. Recordings are sent for transcription and are not stored by us.</li>
+    <li><strong>Derived data</strong>: mood/emotion labels, topic tags, recaps and replies the AI generates from your writing.</li>
+    <li><strong>Notification data</strong>: if you turn on reminders, a device push token and your time zone.</li>
+    <li><strong>Usage counts</strong>: a daily count of AI requests per account, used only to enforce a fair-use limit.</li>
   </ul>
-  <p>We do <strong>not</strong> collect location, contacts, or advertising identifiers, and there are no third-party ad or analytics trackers in the app.</p>
+  <p>We do <strong>not</strong> collect location, contacts, or advertising identifiers. There are no third-party advertising or analytics trackers in the app, and we do <strong>not</strong> track you across other companies’ apps or websites.</p>
 
   <h2>How your data is used</h2>
   <ul>
-    <li>To store and sync your journal across your devices when you sign in.</li>
-    <li>To power the AI features — your entry text is sent to our AI provider to generate mood tags, recaps, and answers when you ask.</li>
+    <li>To store your journal and sync it across devices where you sign in.</li>
+    <li>To run the AI features you allow: mood and topic tagging, journaling prompts, the welcome-back note, the weekly letter, recaps, goal suggestions, “Wrapped” summaries, answers to your questions, and voice-to-text.</li>
     <li>To send the reminders you turn on.</li>
+    <li>To keep the service working and secure (sign-in, rate limits, fixing errors).</li>
   </ul>
+  <p>We do not use your data for advertising, we do not sell it, and we do not use it to profile you for anyone else.</p>
 
-  <h2>Who can access it — honestly</h2>
+  <h2>AI features and third-party AI services</h2>
+  <p><strong>Nothing is sent to an AI service until you agree.</strong> The first time you sign in, the app shows exactly what will be sent and to whom, and asks your permission. If you decline, the journal still works without AI, and nothing is sent. You can change your choice anytime in <strong>Customize → AI &amp; your data</strong>.</p>
+  <p>When AI features are on:</p>
   <ul>
-    <li><strong>Other users cannot.</strong> Each account's entries are locked to that account by database Row-Level Security — the database itself refuses cross-user reads.</li>
-    <li><strong>Your entries are encrypted in transit (HTTPS) and at rest</strong> on our database provider.</li>
-    <li><strong>The app is not end-to-end encrypted.</strong> Because the AI reads your entries to tag moods and answer questions, the operator and our infrastructure providers can technically access your data. We do not read it for any purpose other than running the service, and we never sell it.</li>
-    <li><strong>AI processing:</strong> when the AI runs, your entry text is sent to a third-party model provider (OpenRouter, routing to the model in use) solely to return the result. We do not permit that data to be used to train models.</li>
+    <li><strong>Sent</strong>: the text of your entries, notes and goals; questions you ask; short summaries of past entries (for prompts, recaps and your weekly letter); and voice recordings when you use Talk.</li>
+    <li><strong>Never sent</strong>: your photos, your password, or your PIN.</li>
+    <li><strong>Who receives it</strong>: <strong>OpenRouter</strong> (openrouter.ai), which routes text to <strong>Anthropic</strong>’s Claude model to produce tags and replies; and <strong>Groq</strong> (groq.com), which converts voice recordings to text. If web search is on, the AI model may run a web search for your question.</li>
+    <li><strong>How they may use it</strong>: only to process the request and return the result. Under their API terms these providers do not use API data to train their models, and they are required to protect it with safeguards at least equal to those described in this policy.</li>
   </ul>
 
-  <h2>Sharing</h2>
-  <p>We do not sell your data and we do not share it with advertisers. Data is processed only by the infrastructure providers needed to run the app: our hosting provider (Vercel), our database and authentication provider (Supabase), and our AI provider (OpenRouter). Anything you choose to share from the app — a "Wrapped" card, a streak, a line you tap "share" on — leaves the app only when you deliberately share it.</p>
+  <h2>Who can access your data, honestly</h2>
+  <ul>
+    <li><strong>Other users cannot.</strong> Each account’s data is locked to that account by database row-level security.</li>
+    <li><strong>Encryption</strong>: data is encrypted in transit (HTTPS) and at rest by our database provider.</li>
+    <li><strong>Not end-to-end encrypted.</strong> Because the AI features need to read your text, our infrastructure providers and the app operator can technically access your data. We access it only when needed to run or support the service (for example, if you ask us for help).</li>
+  </ul>
+
+  <h2>Service providers we share data with</h2>
+  <p>Data is processed only by the providers needed to run the app, each bound to protect it and use it only for that purpose:</p>
+  <ul>
+    <li><strong>Supabase</strong>: database and sign-in (stores your account and journal).</li>
+    <li><strong>Vercel</strong>: hosting and the app’s server functions.</li>
+    <li><strong>OpenRouter / Anthropic</strong>: AI text features (only if you allow AI).</li>
+    <li><strong>Groq</strong>: voice-to-text (only if you allow AI).</li>
+    <li><strong>Apple</strong>: delivering push notifications you turn on.</li>
+  </ul>
+  <p>Anything you choose to share yourself, such as a “Wrapped” card, leaves the app only when you deliberately share it.</p>
 
   <h2>Your choices</h2>
   <ul>
-    <li><strong>Export</strong> — you can export a full backup of your journal at any time from the app's settings.</li>
-    <li><strong>Delete</strong> — you can permanently delete your account and all associated data from inside the app (Customize → Delete account). This removes your entries and your login and cannot be undone.</li>
+    <li><strong>AI on/off</strong>: Customize → AI &amp; your data.</li>
+    <li><strong>Export</strong>: download a full backup of your journal anytime from Customize.</li>
+    <li><strong>Delete</strong>: permanently delete your account and all associated data from inside the app (Customize → Delete account). This cannot be undone.</li>
   </ul>
 
   <h2>Data retention</h2>
   <p>We keep your data for as long as your account exists. When you delete your account, your data is removed from our database. Backups held by our infrastructure providers may persist for a short period before being overwritten.</p>
 
   <h2>Children</h2>
-  <p>Journal is not directed to children under 13, and we do not knowingly collect data from them.</p>
+  <p>Lucid is not directed to children under 13, and we do not knowingly collect data from them.</p>
 
   <h2>Changes</h2>
-  <p>If this policy changes materially, we'll update the date above and, where appropriate, notify you in the app.</p>
+  <p>If this policy changes materially, we will update the date above and, where appropriate, tell you in the app.</p>
 
   <h2>Contact</h2>
-  <p>Questions about your privacy or this policy: <a href="mailto:aijournalsupport@gmail.com">aijournalsupport@gmail.com</a></p>
+  <p>Questions about your privacy or this policy: <a href="mailto:aijournalsupport@gmail.com">aijournalsupport@gmail.com</a> · <a href="support.html">Support</a></p>
 </main>
 </body>
 </html>

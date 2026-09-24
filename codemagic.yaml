@@ -47,11 +47,19 @@ workflows:
           # the App Store, so use a unique home-screen name instead.
           plutil -replace CFBundleDisplayName -string "Lucid AI Journal" "$PLIST"
           plutil -replace CFBundleName        -string "Lucid AI Journal" "$PLIST"
-          # bump the build number so Apple never sees a duplicate (builds 2-9 used)
-          plutil -replace CFBundleVersion     -string "10"         "$PLIST"
+          # Unique, always-increasing build number (Apple rejects duplicates; 2-13
+          # were used by hand). PROJECT_BUILD_NUMBER is Codemagic's own counter.
+          plutil -replace CFBundleVersion     -string "$((100 + ${PROJECT_BUILD_NUMBER:-0}))" "$PLIST"
           # voice-to-text records audio via getUserMedia, which WKWebView blocks
           # unless the app declares why it needs the microphone
           plutil -replace NSMicrophoneUsageDescription -string "Lucid uses the microphone so you can speak your journal entries instead of typing." "$PLIST"
+          # "+ Photo" offers Take Photo / Photo Library. iOS KILLS the app the moment
+          # it opens the camera or library without these keys — this was the
+          # 2.1(a) rejection (Sign up → Photo → Take Photo → crash, build 9).
+          plutil -replace NSCameraUsageDescription -string "Lucid uses the camera so you can add a photo to a journal entry." "$PLIST"
+          plutil -replace NSPhotoLibraryUsageDescription -string "Lucid opens your photo library so you can add photos to journal entries." "$PLIST"
+          plutil -replace NSPhotoLibraryAddUsageDescription -string "Lucid can save your shared journal cards to your photo library." "$PLIST"
+          echo "Info.plist permissions:"; plutil -p "$PLIST" | grep -E "Usage|CFBundleVersion"
       - name: Set the app icon (Lucid balloons)
         script: |
           set -e

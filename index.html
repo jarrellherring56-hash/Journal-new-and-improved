@@ -441,11 +441,14 @@ function Linkify({ text }) {
 
 // ---------- image compression ----------
 function compressImage(file) {
+  // Decode straight from the file via an object URL: a full-res camera shot as a
+  // base64 data URL is tens of MB of string, which strains iPad webview memory.
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
+    let url = "";
+    try { url = URL.createObjectURL(file); } catch (e) { url = ""; }
+    const img = new Image();
+    img.onload = () => {
+      try {
         const max = 1000;
         let { width, height } = img;
         if (width > max || height > max) {
@@ -458,10 +461,16 @@ function compressImage(file) {
         canvas.height = height;
         canvas.getContext("2d").drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL("image/jpeg", 0.82));
-      };
-      img.onerror = () => reject(new Error("Couldn't read image"));
-      img.src = reader.result;
+      } catch (e) {
+        reject(new Error("Couldn't read image"));
+      } finally {
+        if (url) URL.revokeObjectURL(url);
+      }
     };
+    img.onerror = () => { if (url) URL.revokeObjectURL(url); reject(new Error("Couldn't read image")); };
+    if (url) { img.src = url; return; }
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
     reader.onerror = () => reject(new Error("Couldn't read file"));
     reader.readAsDataURL(file);
   });
@@ -524,9 +533,35 @@ function extractJSONObject(raw) {
   return JSON.parse(cleaned.slice(s, e + 1));
 }
 
+// ---------- AI data-sharing consent (App Store 5.1.1(i) / 5.1.2(i)) ----------
+// Nothing is sent to a third-party AI service until the signed-in user has seen
+// the disclosure (AIConsentGate) and tapped Allow. Stored per account per device.
+// "" = not asked yet (calls wait for an answer), "yes" = allowed, "no" = AI off.
+const aiConsentKey = () =>
+  "lucid:aiConsent:v1:" + ((window.__session && window.__session.user && window.__session.user.id) || "local");
+function getAIConsent() {
+  try { return localStorage.getItem(aiConsentKey()) || ""; } catch (e) { return ""; }
+}
+const aiConsentWaiters = [];
+function setAIConsent(v) {
+  try { localStorage.setItem(aiConsentKey(), v); } catch (e) { }
+  aiConsentWaiters.splice(0).forEach((resolve) => resolve(v === "yes"));
+  window.dispatchEvent(new Event("lucid-ai-consent"));
+}
+function ensureAIConsent() {
+  const v = getAIConsent();
+  if (v === "yes") return Promise.resolve(true);
+  if (v === "no") return Promise.resolve(false);
+  return new Promise((resolve) => aiConsentWaiters.push(resolve));
+}
+const AI_OFF_MSG = "AI features are off. Turn them on in Customize → AI & your data.";
+function aiOffError() { const e = new Error(AI_OFF_MSG); e.aiOff = true; return e; }
+const aiErrMsg = (e, fallback) => (e && e.aiOff ? AI_OFF_MSG : fallback);
+
 // `web: true` asks the server to let the model search the web (costs extra —
 // only the question-answering paths request it, never the tagging/recap ones).
 async function callClaudeRaw(prompt, maxTokens = 1000, web = false) {
+  if (!(await ensureAIConsent())) throw aiOffError();
   const token = window.__session && window.__session.access_token;
   const response = await fetch(API_BASE + "/api/ai", {
     method: "POST",
@@ -855,9 +890,19 @@ function onThisDay(days) {
       for (const sg of en.segments || []) { const t = itemPlainText(sg).trim(); if (t) { text = t; break; } }
       if (text) break;
     }
-    if (text) out.push({ label: o.label, key, text: text.slice(0, 220) });
+    if (text) out.push({ label: o.label, key, text: snippet(text, 220) });
   }
   return out;
+}
+
+// Shorten to a whole word and mark it, so a preview never ends mid-word
+// ("on compensat") and reads like the text was cut off.
+function snippet(text, max) {
+  const t = String(text || "");
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s.,;:!?-]+$/, "") + "…";
 }
 
 // A running list of your brighter moments — segments the AI tagged with an
@@ -870,7 +915,7 @@ function buildWins(days) {
       for (const sg of en.segments || []) {
         const emo = (sg.emotion || "").toLowerCase();
         const txt = itemPlainText(sg).trim();
-        if (txt && (VALENCE[emo] || 0) >= 1) wins.push({ key: k, emotion: emo, text: txt.slice(0, 200) });
+        if (txt && (VALENCE[emo] || 0) >= 1) wins.push({ key: k, emotion: emo, text: snippet(txt, 200) });
       }
     }
     if (wins.length >= 40) break;
@@ -1036,6 +1081,71 @@ const LG_CSS = `
     font: 600 13.5px 'Inter', sans-serif; padding: 0 4px; }
   .lg-msg { margin-top: 12px; color: #ff6b81; font-size: 13.5px; text-align: center; }
 `;
+
+// ---------- AI data-sharing disclosure ----------
+// The exact disclosure Apple asks for: what is sent, who receives it, and a
+// clear yes/no before anything leaves the app. Reused in Customize.
+function AIDisclosure() {
+  return (
+    <>
+      <p className="ac-p"><b>What gets sent:</b> the text of your entries, notes and goals; questions you ask the AI;
+        short summaries of past entries (for prompts, recaps and your weekly letter); and voice recordings when you use Talk.</p>
+      <p className="ac-p"><b>Never sent:</b> your photos, your password, or your PIN.</p>
+      <p className="ac-p"><b>Who receives it:</b> <b>OpenRouter</b>, which passes your text to <b>Anthropic's Claude</b> model
+        to tag moods and write replies, and <b>Groq</b>, which turns voice recordings into text. When web search is on,
+        the AI may also search the web for your question. These services use your data only to return a result, not to train
+        AI models, and they protect it at least as well as our own privacy policy does.</p>
+      <p className="ac-p"><b>Your choice:</b> if you say no, the journal still works. Entries save without AI tags, and
+        nothing is sent. You can change this anytime in Customize → AI &amp; your data.{" "}
+        <a href={API_BASE + "/privacy.html"} target="_blank" rel="noopener">Privacy policy</a></p>
+    </>
+  );
+}
+
+const AC_CSS = `
+  .ac-veil { position: fixed; inset: 0; z-index: 9999; background: rgba(5,6,8,.82); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center; overflow-y: auto;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    font-family: 'Inter', system-ui, sans-serif; }
+  .ac-card { width: 100%; max-width: 460px; background: #111318; border: 1px solid #20242c; border-radius: 20px;
+    padding: 24px; color: #c9ced6; margin: auto; }
+  .ac-card h2 { font-family: 'Space Grotesk', 'Inter', sans-serif; color: #f7f8fa; font-size: 21px;
+    letter-spacing: -.02em; margin: 0 0 12px; }
+  .ac-p { font-size: 14px; line-height: 1.55; margin: 0 0 10px; }
+  .ac-p b { color: #f2f3f5; }
+  .ac-p a { color: #3ce6a4; }
+  .ac-btns { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .ac-yes { background: #3ce6a4; border: 1px solid #3ce6a4; color: #0a0b0e; font: 600 14px 'Inter', sans-serif;
+    padding: 13px; border-radius: 99px; cursor: pointer; }
+  .ac-no { background: transparent; border: 1px solid #2a2f38; color: #c9ced6; font: 500 14px 'Inter', sans-serif;
+    padding: 12px; border-radius: 99px; cursor: pointer; }
+`;
+
+// Blocking prompt shown once per account per device, before any AI call runs.
+function AIConsentGate() {
+  const [answer, setAnswer] = useState(getAIConsent());
+  useEffect(() => {
+    const on = () => setAnswer(getAIConsent());
+    window.addEventListener("lucid-ai-consent", on);
+    return () => window.removeEventListener("lucid-ai-consent", on);
+  }, []);
+  if (answer) return null;
+  return (
+    <div className="ac-veil" role="dialog" aria-modal="true" aria-labelledby="ac-title">
+      <style>{AC_CSS}</style>
+      <div className="ac-card">
+        <h2 id="ac-title">Allow AI features?</h2>
+        <p className="ac-p">Lucid's AI features (mood tags, prompts, recaps, answers and voice-to-text) work by sending
+          some of your data to outside AI services. Here's exactly what that means:</p>
+        <AIDisclosure />
+        <div className="ac-btns">
+          <button className="ac-yes" onClick={() => setAIConsent("yes")}>Allow AI features</button>
+          <button className="ac-no" onClick={() => setAIConsent("no")}>Don't allow, keep AI off</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------- privacy lock screen ----------
 function LockScreen({ onUnlock }) {
@@ -1441,6 +1551,13 @@ function XOJournal() {
     : "";
   // Web search is on by default; set it to false in Customize to turn it off.
   const webSearch = settings.webSearch !== false;
+  // Mirrors the AI data-sharing consent so the Customize switch stays in sync with the gate.
+  const [aiConsent, setAiConsentView] = useState(getAIConsent());
+  useEffect(() => {
+    const on = () => setAiConsentView(getAIConsent());
+    window.addEventListener("lucid-ai-consent", on);
+    return () => window.removeEventListener("lucid-ai-consent", on);
+  }, []);
 
   const updateSettings = (patch) => {
     setSettings((prev) => {
@@ -1648,7 +1765,9 @@ Their week:
     if (!imgs.length) return;
     setError("");
     try {
-      const compressed = await Promise.all(imgs.map(compressImage));
+      // one at a time so several full-size photos never sit in memory together
+      const compressed = [];
+      for (const f of imgs) compressed.push(await compressImage(f));
       setPendingImgs((prev) => [
         ...prev,
         ...compressed.map((dataUrl) => ({ id: uid(), dataUrl })),
@@ -1774,6 +1893,8 @@ Their week:
       return;
     }
     if (transcribing) return;
+    // Recordings go to a third-party speech-to-text service — same consent as the AI.
+    if (canRecord() && !(await ensureAIConsent())) { setError(AI_OFF_MSG); return; }
 
     if (!canRecord()) return startWebSpeech();
 
@@ -1852,8 +1973,11 @@ Their week:
           const result = await classifyLongEntry(text, vibe.text, topicList);
           segments = result.segments; tagline = result.tagline;
         } catch (aiErr) {
-          console.error("Classification failed, saving unsorted:", aiErr);
-          setError("Saved, but the AI couldn't sort it — " + (aiErr && aiErr.message ? aiErr.message : "unknown error"));
+          // AI switched off by the user: save quietly, untagged — not an error.
+          if (!(aiErr && aiErr.aiOff)) {
+            console.error("Classification failed, saving unsorted:", aiErr);
+            setError("Saved, but the AI couldn't sort it — " + (aiErr && aiErr.message ? aiErr.message : "unknown error"));
+          }
         }
         if (!segments.length) segments = [{ text, topic: "Notes", emotion: "neutral" }];
         for (const seg of segments) {
@@ -1900,7 +2024,7 @@ Their week:
       textareaRef.current && textareaRef.current.focus();
     } catch (e) {
       console.error(e);
-      setError("The AI couldn't answer just now — please try again.");
+      setError(aiErrMsg(e, "The AI couldn't answer just now — please try again."));
     } finally {
       setBusy(false); setBusyMode("");
     }
@@ -1943,7 +2067,7 @@ Their recent entries:
 Their question: "${question}"`, 700, webSearch));
       setAskMsgs((m) => [...m, { role: "a", text: res.text, sources: res.sources, webError: res.webError }]);
     } catch (e) {
-      setAskMsgs((m) => [...m, { role: "a", text: "Couldn't reach the AI — " + ((e && e.message) || "unknown error") }]);
+      setAskMsgs((m) => [...m, { role: "a", text: e && e.aiOff ? AI_OFF_MSG : "Couldn't reach the AI — " + ((e && e.message) || "unknown error") }]);
     } finally {
       setAskBusy(false);
     }
@@ -2222,7 +2346,7 @@ Profile: ${vibe.text}`, 700));
       const arr = JSON.parse(cleaned.slice(s, e2 + 1));
       setGoalSugs(arr.filter((x) => x && x.goal).slice(0, 3));
     } catch (e) {
-      setError("Couldn't come up with suggestions — try again.");
+      setError(aiErrMsg(e, "Couldn't come up with suggestions — try again."));
     } finally {
       setSugBusy(false);
     }
@@ -2250,7 +2374,7 @@ Digest:
 """${digest}"""`, 800));
       setRecap(text);
     } catch (e) {
-      setError("Couldn't build the recap — try again.");
+      setError(aiErrMsg(e, "Couldn't build the recap — try again."));
     } finally {
       setRecapBusy(false);
     }
@@ -2652,7 +2776,7 @@ Digest:
             {prettyDate(rewind.day)}{segTags(rewind.seg).length ? " · " + segTags(rewind.seg).join(" · ") : ""}
           </p>
           <div className="xo-rewindtext">
-            {itemPlainText(rewind.seg).slice(0, 280)}{itemPlainText(rewind.seg).length > 280 ? "…" : ""}
+            {snippet(itemPlainText(rewind.seg), 280)}
           </div>
           <div className="xo-panel-row" style={{ marginTop: 10 }}>
             <button className="xo-panel-btn" onClick={() => setRewind(pickRewind(days))}>Show another</button>
@@ -2689,7 +2813,7 @@ Digest:
         return (
           <p className="xo-note" key={o.key} style={{ margin: "0 0 8px" }}>
             <b style={{ color: "var(--body)" }}>{o.label}</b> you wrote about <em style={{ color: "var(--accent)", fontStyle: "normal" }}>{topics || "your day"}</em>
-            {first ? <> — "{String(first.text).slice(0, 90)}{first.text.length > 90 ? "…" : ""}"</> : null}
+            {first ? <> — "{snippet(first.text, 90)}"</> : null}
           </p>
         );
       }),
@@ -2735,6 +2859,9 @@ Digest:
             radial-gradient(900px 420px at 8% 0%, rgba(var(--strong-rgb), 0.04), transparent 55%),
             var(--bg);
           color: var(--ink);
+          /* a pasted URL or very long word wraps inside its card instead of
+             running past the screen edge (overflow-x is hidden, so it'd be cut) */
+          overflow-wrap: anywhere;
           font-family: var(--bodyfont);
           /* safe-area insets keep the header clear of the iPhone notch / Dynamic Island */
           padding: calc(28px + env(safe-area-inset-top, 0px))
@@ -2805,17 +2932,21 @@ Digest:
         @media (max-width: 700px) { .xo-kpi.hero { grid-column: span 1; } .xo-kpi.hero .val { font-size: 32px; } }
 
         /* ---------- layout ---------- */
-        .xo-grid2 { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
+        /* minmax(0, …) everywhere: a bare 1fr track grows to its widest child's
+           min-content, which pushed Insights to ~720px on iPhone and cut the right
+           half of every panel off-screen. min-width:0 lets items shrink to the track. */
+        .xo-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+        .xo-grid2 > *, .xo-side > * { min-width: 0; }
         .xo-side { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; scrollbar-width: thin; }
         /* Below desktop: rail collapses under the feed */
         @media (max-width: 1023px) {
-          .xo-grid2 { grid-template-columns: 1fr; }
+          .xo-grid2 { grid-template-columns: minmax(0, 1fr); }
           .xo-side  { position: static; max-height: none; }
         }
         /* iPad portrait + Split View: panels sit side-by-side under the feed */
         @media (min-width: 700px) and (max-width: 1023px) {
           .xo-side {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+            display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px;
             align-items: start; margin-top: 4px;
           }
           .xo-side .xo-panel { margin-bottom: 0; }
@@ -2860,7 +2991,7 @@ Digest:
         .xo-panel-btn:disabled { opacity: 0.5; cursor: default; }
 
         /* ---------- mood mini calendar ---------- */
-        .xo-minical { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; max-width: 340px; }
+        .xo-minical { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; max-width: 340px; }
         .xo-minical .mh { font-size: 9px; color: var(--faint); text-align: center; text-transform: uppercase; letter-spacing: 0.1em; padding: 2px; }
         .xo-mc { aspect-ratio: 1; border-radius: 8px; background: var(--inputbg); border: 1px solid var(--line); transition: transform .15s; }
         .xo-mc:hover { transform: scale(1.1); }
@@ -2979,7 +3110,7 @@ Digest:
         .xo-section:last-child { margin-bottom: 0; }
 
         .xo-flow { display: flex; flex-direction: column; gap: 2px; }
-        .xo-seg { display: grid; grid-template-columns: 1fr 84px; gap: 12px; align-items: start; padding: 3px 0; }
+        .xo-seg { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 12px; align-items: start; padding: 3px 0; }
         .xo-segmain { min-width: 0; font-size: 14px; line-height: 1.75; color: var(--body); }
         .xo-hl { padding: 2px 7px; border-radius: 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
         .xo-segside { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-top: 4px; text-align: right; }
@@ -3168,7 +3299,7 @@ Digest:
           .xo-composer textarea, .xo-search, .xo-panel input[type="text"], .xo-editbox textarea, .xo-chatrow input, .xo-goalnew input { font-size: 16px; }
 
           /* balanced 2×2 KPI grid — no orphaned card */
-          .xo-kpis { grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+          .xo-kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin: 12px 0; }
           .xo-kpi { padding: 13px 15px; border-radius: 16px; }
           .xo-kpi.hero { grid-column: span 1; }
           .xo-kpi h4 { margin-bottom: 5px; font-size: 9px; }
@@ -3187,12 +3318,14 @@ Digest:
           .xo-searchrow { margin-bottom: 8px; }
           .xo-topicchips { gap: 6px; margin-bottom: 10px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
           .xo-topicchips::-webkit-scrollbar { display: none; }
+          /* settings choices wrap instead of hiding off the right edge */
+          .xo-custom .xo-topicchips { flex-wrap: wrap; overflow-x: visible; }
           .xo-topicchip { flex: 0 0 auto; }
 
           .xo-dayhead { padding: 12px 14px; gap: 8px; }
           .xo-daybody { padding: 0 10px 10px; }
           .xo-section { padding: 11px 12px; }
-          .xo-seg { grid-template-columns: 1fr 56px; gap: 8px; }
+          .xo-seg { grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; }
           .xo-emolabel { font-size: 8.5px; letter-spacing: 0.05em; }
           .xo-sidetopic { max-width: 56px; }
           .xo-segacts { opacity: 1; gap: 0; }
@@ -3208,9 +3341,12 @@ Digest:
         /* ================= DESKTOP REFINEMENTS (phone layout untouched) ================= */
         @media (min-width: 701px) {
           /* header stays reachable while scrolling a long journal */
+          /* the safe-area pad keeps the title below the iPad status bar once the
+             header sticks to the top (the native shell draws the bar over the page) */
           .xo-top {
             position: sticky; top: 0; z-index: 30;
-            padding: 14px 0 12px; margin-bottom: 10px;
+            padding: calc(14px + env(safe-area-inset-top, 0px)) 0 12px; margin-bottom: 10px;
+            margin-top: calc(-1 * env(safe-area-inset-top, 0px));
             background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, transparent) 58%, transparent);
             -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
           }
@@ -3242,7 +3378,7 @@ Digest:
                               calc(70px + env(safe-area-inset-bottom, 0px))
                               calc(22px + env(safe-area-inset-left, 0px)); }
           /* 4 KPI cards across is cramped at this width — 2×2 reads better */
-          .xo-kpis { grid-template-columns: 1fr 1fr; gap: 12px; }
+          .xo-kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
           .xo-kpi.hero { grid-column: span 1; }
           .xo-kpi .val { font-size: 26px; }
           .xo-kpi.hero .val { font-size: 30px; }
@@ -3290,7 +3426,7 @@ Digest:
         .xo-weekbars .wb span { font-size: 9px; color: var(--faint); text-transform: uppercase; text-align: center; }
         .xo-statrow { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
         .xo-statrow:last-child { margin-bottom: 0; }
-        .xo-statrow .name { font-size: 12px; color: var(--body); width: 82px; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-statrow .name { font-size: 12px; line-height: 1.3; color: var(--body); flex: 0 0 36%; min-width: 82px; max-width: 160px; overflow-wrap: anywhere; }
         .xo-statrow .bar { flex: 1; height: 6px; border-radius: 99px; background: var(--inputbg); overflow: hidden; display: block; }
         .xo-statrow .fill { display: block; height: 100%; border-radius: 99px; }
         .xo-statrow .n { font-size: 11px; color: var(--faint); width: 26px; text-align: right; flex: none; }
@@ -3362,7 +3498,7 @@ Digest:
         .xo-sources b { font: 600 9.5px var(--bodyfont); letter-spacing: 0.12em; text-transform: uppercase;
           color: var(--faint); margin-bottom: 2px; }
         .xo-sources a { color: var(--accent); text-decoration: none; font-size: 12px; line-height: 1.5;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
+          overflow-wrap: anywhere; opacity: 0.9; }
         .xo-sources a:hover { opacity: 1; text-decoration: underline; }
 
         .xo-weberr { margin-top: 8px; font-size: 11.5px; color: #ff8b96; line-height: 1.5; }
@@ -3390,7 +3526,7 @@ Digest:
         .xo-tagopt:hover { background: rgba(var(--strong-rgb), 0.06); }
         .xo-tagopt.on { color: var(--accent); background: var(--soft); }
         .xo-tagopt.clear { color: var(--faint); }
-        .xo-tagopt .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-tagopt .nm { flex: 1; min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
         .xo-tagopt .ct { color: var(--faint); font-size: 11.5px; flex: none; }
         .xo-tagopt .star { flex: none; color: var(--faint); font-size: 13px; line-height: 1; }
         .xo-tagopt .star.on { color: var(--accent); }
@@ -3413,8 +3549,8 @@ Digest:
         .xo-tagrow { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; }
         .xo-tagrow:hover { background: rgba(var(--strong-rgb), 0.04); }
         .xo-tagrow .xo-search { flex: 1; padding: 5px 9px; font-size: 13px; }
-        .xo-tagname { flex: 1; font-size: 13px; color: var(--body); cursor: text; min-width: 0;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .xo-tagname { flex: 1; font-size: 13px; line-height: 1.35; color: var(--body); cursor: text; min-width: 0;
+          overflow-wrap: anywhere; }
         .xo-tagname:hover { color: var(--accent); }
         .xo-tagcount { font-size: 11px; color: var(--faint); flex: none; min-width: 20px; text-align: right; }
 
@@ -3612,7 +3748,7 @@ Digest:
         /* landscape phone */
         @media (max-height: 460px) and (orientation: landscape) {
           .xo-root { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
-          .xo-kpis { grid-template-columns: repeat(4, 1fr); }
+          .xo-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
           .xo-promptcard { display: none; }
           .xo-composer textarea { min-height: 56px; }
           .xo-tabbar { padding-top: 4px; }
@@ -3687,7 +3823,7 @@ Digest:
         )}
 
         {showCustomize && (
-          <div className="xo-panel">
+          <div className="xo-panel xo-custom">
             <label htmlFor="xo-name">Journal name</label>
             <input
               id="xo-name"
@@ -3742,6 +3878,24 @@ Digest:
               <b> Allow</b> when your phone asks.
             </p>
             {pushMsg && <p className="xo-weberr" style={{ marginTop: 6 }}>{pushMsg}</p>}
+
+            <label style={{ marginTop: 14 }}>AI &amp; your data</label>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+              {[["no", "Off"], ["yes", "Allow AI features"]].map(([val, lbl]) => (
+                <button
+                  key={val}
+                  className={(aiConsent || "no") === val ? "xo-topicchip on" : "xo-topicchip"}
+                  onClick={() => setAIConsent(val)}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+            <details className="xo-note" style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer" }}>What's shared, and with whom</summary>
+              <style>{AC_CSS}</style>
+              <div style={{ marginTop: 8 }}><AIDisclosure /></div>
+            </details>
 
             <label style={{ marginTop: 14 }}>Web search</label>
             <div className="xo-topicchips" style={{ marginBottom: 0 }}>
@@ -5093,7 +5247,12 @@ function AuthRoot() {
   }
   window.__signOut = async () => { await window.__sb.auth.signOut(); };
 
-  return <XOJournal key={session.user.id} />;
+  return (
+    <>
+      <XOJournal key={session.user.id} />
+      <AIConsentGate key={"ac-" + session.user.id} />
+    </>
+  );
 }
 
 const __CLEAN_URL = (function(){ try { return new URL(SUPABASE_URL).origin; } catch (e) { return String(SUPABASE_URL).replace(/\/(rest|auth)\/v1\/?$/, "").replace(/\/+$/, ""); } })();

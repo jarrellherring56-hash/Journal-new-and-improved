@@ -10,7 +10,7 @@ const WWW = path.join(__dirname, "www");
 fs.mkdirSync(WWW, { recursive: true });
 
 const files = [
-  "index.html", "sw.js", "manifest.webmanifest", "privacy.html",
+  "index.html", "sw.js", "manifest.webmanifest", "privacy.html", "support.html",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png",
 ];
 for (const f of files) {
