@@ -44,6 +44,11 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 * { -webkit-touch-callout: none; }   /* no long-press "Copy/Look Up" on chrome */
+/* "clip" trims sideways overflow WITHOUT turning the page into a scroll box, so the
+   sticky header and sidebar actually stick (hidden silently broke them). */
+@supports (overflow: clip) { html, body { overflow-x: clip; } }
+/* while any sheet or overlay is open, the page behind it stays put */
+html:has(.lx-veil, .np-veil, .np-focus, .ac-veil, .xo-celebrate, .xo-lightbox, .xo-sheetscrim) { overflow: hidden; }
 </style>
 </head>
 <body>
@@ -1561,6 +1566,7 @@ const NP_FONTS = {
 };
 const NP_FILTER_LS = "lucid:notes:filter:v1";
 const NP_SORTS = { manual: "My order", updated: "Last edited", created: "Newest first", oldest: "Oldest first", title: "Title A–Z" };
+const NP_LIST_PAGE = 60;
 
 const IMG_TOKEN_RE = /^!\[photo\]\((daybook:img:[^)\s]+)\)\s*$/;
 const CHECK_RE = /^(\s*)(?:[-*•]\s+)?\[( |x|X)\]\s?(.*)$/;
@@ -2223,6 +2229,10 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
   };
 
   const visible = React.useMemo(() => npApplyFilter(notes, filter, unlocked), [notes, filter, unlocked]);
+  // long lists: draw the first page and load more on request (keeps the phone list light)
+  const [listLimit, setListLimit] = useState(NP_LIST_PAGE);
+  useEffect(() => { setListLimit(NP_LIST_PAGE); }, [filter]);
+  const listShown = visible.length > listLimit ? visible.slice(0, listLimit) : visible;
   const sel = notes.find((n) => n.id === selId) || null;
   const selOpen = sel && (!sel.locked || unlocked.has(sel.id));
   const allTags = React.useMemo(() => {
@@ -2709,7 +2719,7 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
   };
   const onReorderMove = (e) => {
     if (!reorderRef.current) return;
-    let over = visible.length;
+    let over = listShown.length;
     for (let i = 0; i < visible.length; i++) {
       const el = rowRefs.current[visible[i].id];
       if (!el) continue;
@@ -2808,8 +2818,9 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
             : <><p>Nothing matches these filters.</p>{chips.length > 0 && <button className="np-btn" onClick={() => setFilter({ ...NP_DEFAULT_FILTER, q: "", sort: filter.sort })}>Clear filters</button>}</>}
         </div>
       ) : (
+        <>
         <ul className={"np-list np-ls-" + look.listStyle} onPointerMove={onReorderMove} onPointerUp={onReorderEnd} onPointerCancel={onReorderEnd}>
-          {visible.map((n, i) => {
+          {listShown.map((n, i) => {
             const open = !n.locked || unlocked.has(n.id);
             const td = open ? noteTodos(n) : [];
             const openTd = td.filter((t) => !t.done).length;
@@ -2842,8 +2853,12 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
               </li>
             );
           })}
-          {reorder && reorder.over === visible.length && <li className="np-row dropend" aria-hidden="true" />}
+          {reorder && reorder.over === listShown.length && <li className="np-row dropend" aria-hidden="true" />}
         </ul>
+        {visible.length > listShown.length && (
+          <div className="lx-more"><button onClick={() => setListLimit((n) => n + NP_LIST_PAGE * 2)}>Show more notes ({visible.length - listShown.length} more)</button></div>
+        )}
+        </>
       )}
     </div>
   );
@@ -3011,6 +3026,8 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
   // ----- sheets -----
   const F = filter;
   const setF = (patch) => setFilter({ ...F, ...patch });
+  const [npSec, setNpSec] = useState("");
+  const toggleNpSec = (id) => setNpSec((c) => (c === id ? "" : id));
   const toggleIn = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const renderSheet = () => {
     if (!sheet) return null;
@@ -3018,8 +3035,9 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
     if (sheet === "filters") return (
       <NpSheet title="Filter your notes" onClose={close}>
         <p className="np-hint" style={{ marginTop: 0 }}>You choose what shows. Nothing here is sorted by the AI.</p>
-        <div className="np-fsec"><h4>Tags</h4>
-          {allTags.length === 0 ? <p className="np-hint">Add tags to a note (under its title) to filter by them.</p> : (
+        <div className="cs-list np-flist">
+        <CustSec id="tags" title="Tags" sub={F.tags.length ? F.tags.map((t) => "#" + t).join(", ") + (F.tags.length > 1 ? " · " + (F.tagMode === "all" ? "all" : "any") : "") : "Any tag"} open={npSec} onToggle={toggleNpSec}>
+          {allTags.length === 0 ? <p className="np-hint" style={{ margin: 0 }}>Add tags to a note (under its title) to filter by them.</p> : (
             <>
               <div className="np-chipwrap">
                 {allTags.map(([t, c]) => (
@@ -3029,8 +3047,8 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
               {F.tags.length > 1 && <div style={{ marginTop: 8 }}><NpChoice label="Tag matching" value={F.tagMode} onChange={(v) => setF({ tagMode: v })} options={[["any", "Match any"], ["all", "Match all"]]} /></div>}
             </>
           )}
-        </div>
-        <div className="np-fsec"><h4>Color</h4>
+        </CustSec>
+        <CustSec id="color" title="Color" sub={F.colors.length ? F.colors.map((c) => (c === "none" ? "No color" : c[0].toUpperCase() + c.slice(1))).join(", ") : "Any color"} open={npSec} onToggle={toggleNpSec}>
           <div className="np-chipwrap">
             {[["none", "No color"], ...Object.keys(NOTE_COLORS).map((c) => [c, c[0].toUpperCase() + c.slice(1)])].map(([c, label]) => (
               <button key={c} className={F.colors.includes(c) ? "np-fchip on" : "np-fchip"} aria-pressed={F.colors.includes(c)} onClick={() => setF({ colors: toggleIn(F.colors, c) })}>
@@ -3038,20 +3056,20 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
               </button>
             ))}
           </div>
-        </div>
-        <div className="np-fsec"><h4>Show only</h4>
+        </CustSec>
+        <CustSec id="only" title="Show only" sub={[F.pinned && "Pinned", F.photos && "Has photos"].filter(Boolean).join(", ") || "Everything"} open={npSec} onToggle={toggleNpSec}>
           <div className="np-chipwrap">
             <button className={F.pinned ? "np-fchip on" : "np-fchip"} aria-pressed={F.pinned} onClick={() => setF({ pinned: !F.pinned })}><NpIcon name="pin" size={13} />Pinned</button>
             <button className={F.photos ? "np-fchip on" : "np-fchip"} aria-pressed={F.photos} onClick={() => setF({ photos: !F.photos })}><NpIcon name="camera" size={13} />Has photos</button>
           </div>
-        </div>
-        <div className="np-fsec"><h4>Checklists</h4>
+        </CustSec>
+        <CustSec id="todo" title="Checklists" sub={({ any: "Any", open: "Has open to-dos", done: "All done", none: "No checklist" })[F.todo] || "Any"} open={npSec} onToggle={toggleNpSec}>
           <NpChoice label="Checklists" value={F.todo} onChange={(v) => setF({ todo: v })} options={[["any", "Any"], ["open", "Has open to-dos"], ["done", "All done"], ["none", "No checklist"]]} />
-        </div>
-        <div className="np-fsec"><h4>Locked notes</h4>
+        </CustSec>
+        <CustSec id="locked" title="Locked notes" sub={({ any: "Shown", only: "Only locked", hide: "Hidden" })[F.locked] || "Shown"} open={npSec} onToggle={toggleNpSec}>
           <NpChoice label="Locked notes" value={F.locked} onChange={(v) => setF({ locked: v })} options={[["any", "Show"], ["only", "Only locked"], ["hide", "Hide"]]} />
-        </div>
-        <div className="np-fsec"><h4>Last edited</h4>
+        </CustSec>
+        <CustSec id="when" title="Last edited" sub={F.when === "range" ? (F.from || "…") + " → " + (F.to || "…") : ({ any: "Any time", today: "Today", "7d": "Last 7 days", "30d": "Last 30 days" })[F.when] || "Any time"} open={npSec} onToggle={toggleNpSec}>
           <NpChoice label="Last edited" value={F.when} onChange={(v) => setF({ when: v })} options={[["any", "Any time"], ["today", "Today"], ["7d", "7 days"], ["30d", "30 days"], ["range", "Pick dates"]]} />
           {F.when === "range" && (
             <div className="np-range">
@@ -3059,10 +3077,12 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
               <label>To <input type="date" value={F.to} min={F.from || undefined} onChange={(e) => setF({ to: e.target.value })} /></label>
             </div>
           )}
-        </div>
-        <div className="np-fsec"><h4>Recently deleted</h4>
+        </CustSec>
+        <CustSec id="deleted" title="Recently deleted" sub={F.deleted ? "Showing deleted notes" : deletedCount + " deleted"} open={npSec} onToggle={toggleNpSec}>
           <button className={F.deleted ? "np-fchip on" : "np-fchip"} aria-pressed={F.deleted} onClick={() => setF({ deleted: !F.deleted })}><NpIcon name="trash" size={13} />Show deleted notes ({deletedCount})</button>
+        </CustSec>
         </div>
+
         <div className="np-sheetfoot">
           <button className="np-linkbtn" onClick={() => setFilter({ ...NP_DEFAULT_FILTER, q: F.q, sort: F.sort })}>Clear all</button>
           {npActiveChips(F).length > 0 && <button className="np-btn" onClick={() => { setSheetData({ name: "" }); setSheet("saveview"); }}>Save as view</button>}
@@ -3493,6 +3513,9 @@ const NP_CSS = `
   .np-view .np-viewx { color: var(--faint); padding: 6px 9px 6px 4px; display: inline-flex; }
   .np-chipwrap { display: flex; gap: 6px; flex-wrap: wrap; }
   .np-fsec { margin: 0 0 18px; }
+  .np-flist { margin: 0 0 16px; }
+  .np-flist .cs-head { min-height: 52px; padding: 10px 14px; }
+  .np-flist .cs-body { padding: 12px 14px 14px; }
   .np-fsec h4 { font: 600 10.5px var(--bodyfont); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0 0 8px; }
   .np-fsec input[type=range] { width: 100%; accent-color: var(--accent); }
   .np-choice { display: inline-flex; flex-wrap: wrap; gap: 6px; }
@@ -4034,7 +4057,7 @@ function TodayCard({ days, onCheckIn, onWrite, streakInfo, freezeOn, blocks, onB
           ))}
         </div>
       </div>
-      {freezeOn && streakInfo && streakInfo.frozen > 0 && (
+      {freezeOn && streakInfo && streakInfo.frozen > 0 && streakInfo.lastFrozen >= dayKey(new Date(Date.now() - 2 * 86400000)) && (
         <div className="lx-freeze">❄ A streak freeze covered a missed day, so your {streakInfo.streak}-day streak is safe.</div>
       )}
       {list.filter((b) => b.on).map((b) => block(b.id))}
@@ -4155,6 +4178,20 @@ function Confetti() {
     <div className="lx-confetti" aria-hidden="true">
       {bits.map((b, i) => <i key={i} style={{ left: b.l + "%", width: b.w, height: b.w * 1.6, background: b.c, animationDelay: b.d + "s", animationDuration: b.t + "ms", transform: "rotate(" + b.r + "deg)" }} />)}
     </div>
+  );
+}
+
+// ----- Customize: one collapsible section per group, its current value shown in the header -----
+function CustSec({ id, title, sub, open, onToggle, children }) {
+  const on = open === id;
+  return (
+    <section className={on ? "cs-sec open" : "cs-sec"}>
+      <button className="cs-head" aria-expanded={on} aria-controls={"cs-" + id} onClick={() => onToggle(id)}>
+        <span className="cs-titles"><span className="cs-title">{title}</span>{sub && <span className="cs-sub">{sub}</span>}</span>
+        <i className="cs-chev" aria-hidden="true" />
+      </button>
+      {on && <div className="cs-body" id={"cs-" + id}>{children}</div>}
+    </section>
   );
 }
 
@@ -4340,7 +4377,15 @@ function JournalFilterSheet({ f, setF, onClose, views, onSaveView, onApplyView, 
 
 // ----- Face ID / Touch ID (native only; the bridge plugin is optional) -----
 const FACEID_LS = "lucid:faceid:v1";
-const getBio = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BiometricAuth) || null;
+// The native side registers as "BiometricAuthNative" and exposes checkBiometry + internalAuthenticate
+// (the npm package wraps those as "authenticate"; we have no bundler, so call the native proxy directly).
+const getBio = () => {
+  const P = window.Capacitor && window.Capacitor.Plugins;
+  if (!P) return null;
+  const N = P.BiometricAuthNative;
+  if (N && N.checkBiometry && N.internalAuthenticate) return { checkBiometry: (o) => N.checkBiometry(o), authenticate: (o) => N.internalAuthenticate(o) };
+  return P.BiometricAuth || null;
+};
 async function bioAvailable() {
   const B = getBio();
   if (!B || !B.checkBiometry) return false;
@@ -4378,6 +4423,8 @@ const LX_CSS = `
   .lx-write { margin-top: 14px; width: 100%; background: var(--accent); border: 1px solid var(--accent); color: var(--btn-text, #0a0b0e);
     font: 600 14px var(--bodyfont); padding: 12px; border-radius: 99px; cursor: pointer; transition: transform .12s, filter .15s; }
   .lx-write:hover { filter: brightness(1.06); } .lx-write:active { transform: scale(.985); }
+  /* wide screens: the writing box is right below, so the big jump-to-composer button is just noise */
+  @media (min-width: 1024px) { .lx-write { display: none; } .lx-editrow { margin-top: 10px; } }
   .xo-promptcard > b { padding-right: 78px; }
   .lx-more { display: flex; justify-content: center; margin: 4px 0 18px; }
   .lx-more button { background: transparent; border: 1px solid var(--dash); color: var(--body); font: 500 13px var(--bodyfont); padding: 10px 20px; border-radius: 99px; cursor: pointer; min-height: 40px; }
@@ -4506,6 +4553,28 @@ const LX_CSS = `
   .lx-fontprev.p-lined { background-image: linear-gradient(to bottom, transparent 25px, rgba(var(--strong-rgb), .12) 25px); background-size: 100% 26px; }
   .lx-fontprev.p-dots { background-image: radial-gradient(circle, rgba(var(--strong-rgb), .18) 1px, transparent 1.6px); background-size: 20px 20px; }
   @media (prefers-reduced-motion: reduce) { .lx-confetti { display: none; } .lx-bar i { transition: none; } }
+  /* Customize sheet */
+  .cs-sheet { max-width: 620px; }
+  .cs-sheet .lx-sheethead { padding: 12px 12px 12px 18px; }
+  .cs-sheet .lx-sheethead b { font-size: 18px; }
+  .cs-done { margin: 0 !important; min-height: 38px; padding: 0 20px !important; }
+  .cs-list.xo-panel { background: none; border: none; border-radius: 0; padding: 12px 0 6px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .cs-list.xo-panel:hover { border-color: transparent; transform: none; }
+  .cs-sec { border: 1px solid var(--line); border-radius: 14px; background: var(--inputbg); transition: border-color .2s; }
+  .cs-sec.open { border-color: rgba(var(--accent-rgb), .35); background: transparent; }
+  .cs-head { width: 100%; display: flex; align-items: center; gap: 12px; background: none; border: none; padding: 12px 16px; min-height: 58px; text-align: left; cursor: pointer; color: var(--ink); border-radius: 14px; }
+  .cs-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .cs-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .cs-title { font: 600 15px var(--bodyfont); color: var(--ink); }
+  .cs-sub { font-size: 12.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-chev { flex: none; width: 8px; height: 8px; margin: 0 4px 4px 0; border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); transform: rotate(45deg); transition: transform .2s; }
+  .cs-sec.open .cs-chev { transform: rotate(-135deg); margin-bottom: -4px; }
+  .cs-body { padding: 4px 16px 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .cs-body .xo-topicchips { flex-wrap: wrap; overflow: visible; }
+  .cs-hint { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; }
+  .cs-body .xo-danger { margin-top: 16px; }
+  .cs-body .xo-tagmgr { max-height: none; }
+  @media (prefers-reduced-motion: reduce) { .cs-chev { transition: none; } }
   /* motion */
   @keyframes lxfade { from { opacity: 0; } }
   @keyframes lxrise { from { opacity: 0; transform: translateY(10px); } }
@@ -4522,6 +4591,10 @@ const LX_CSS = `
     .lx-veil { align-items: flex-end; padding: calc(40px + env(safe-area-inset-top, 0px)) 0 0; }
     .lx-sheet { max-width: none; border-radius: 20px 20px 0 0; border-bottom: none; padding-bottom: env(safe-area-inset-bottom, 0px); }
     .lx-greet { font-size: 22px; }
+    /* one swipeable row of moods instead of three ragged ones */
+    .lx-moods { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -18px; padding: 2px 18px 4px; scroll-padding: 0 18px; scroll-snap-type: x proximity; }
+    .lx-moods::-webkit-scrollbar { display: none; }
+    .lx-mood { flex: none; scroll-snap-align: start; }
     .lx-searchinput { font-size: 16px; }
   }
 `;
@@ -4627,6 +4700,8 @@ function XOJournal() {
   // ----- extras: search, journal filters, offline voice, Face ID, year book -----
   const [showSearch, setShowSearch] = useState(false);
   const [showYear, setShowYear] = useState(false);
+  const [custOpen, setCustOpen] = useState("");
+  const toggleCust = (id) => setCustOpen((cur) => (cur === id ? "" : id));
   const [npOpenId, setNpOpenId] = useState(null);
   // long journals: draw the newest days first and load older ones on request (keeps typing snappy)
   const DAY_PAGE = 30;
@@ -4657,9 +4732,10 @@ function XOJournal() {
     el.classList.remove("lx-vin"); void el.offsetWidth; el.classList.add("lx-vin"); // gentle fade/rise on tab change
   }, [view]);
   useEffect(() => {
-    document.body.classList.toggle("lx-overlay-open", showSearch || showJF || showYear);
+    document.body.classList.toggle("lx-overlay-open", showSearch || showJF || showYear || showCustomize);
     return () => document.body.classList.remove("lx-overlay-open");
-  }, [showSearch, showJF, showYear]);
+  }, [showSearch, showJF, showYear, showCustomize]);
+  useEffect(() => { if (!showCustomize) setCustOpen(""); }, [showCustomize]);
   useEffect(() => { bioAvailable().then(setBioAvail); }, []);
   useEffect(() => { if (!voiceInfo) return; const t = setTimeout(() => setVoiceInfo(""), 8000); return () => clearTimeout(t); }, [voiceInfo]);
   const textareaRef = useRef(null);
@@ -4759,6 +4835,16 @@ function XOJournal() {
   // Close the phone "More" sheet whenever the view changes.
   useEffect(() => { setMoreOpen(false); }, [view]);
 
+  // the pinned header's real height, so the sticky sidebar tucks in right under it
+  useEffect(() => {
+    const el = document.querySelector(".xo-top");
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const set = () => document.documentElement.style.setProperty("--xo-toph", el.offsetHeight + "px");
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // iOS-style sticky nav: hairline border appears once the page is scrolled.
   useEffect(() => {
     const fn = () => {
@@ -4768,6 +4854,26 @@ function XOJournal() {
     window.addEventListener("scroll", fn, { passive: true });
     return () => window.removeEventListener("scroll", fn);
   }, []);
+
+  // Each tab keeps its own scroll position (like a native tab bar); a brand-new tab opens at the top.
+  const scrollMem = useRef({});
+  const viewRef = useRef(view);
+  useEffect(() => {
+    const on = () => { scrollMem.current[viewRef.current] = window.scrollY; };
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
+  React.useLayoutEffect(() => {
+    if (viewRef.current === view) return;
+    viewRef.current = view;
+    window.scrollTo(0, scrollMem.current[view] || 0);
+  }, [view]);
+  // tapping the tab you're already on scrolls it back to the top
+  const tabTo = (v) => {
+    if (v === view) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    setView(v);
+  };
+  const viewTop = (v) => { scrollMem.current[v] = 0; window.scrollTo(0, 0); };
 
   // Desktop keyboard shortcuts — skipped while typing (except Esc, which blurs).
   useEffect(() => {
@@ -5313,7 +5419,7 @@ Their week:
     haptic("Light");
   };
   const openDay = (k) => {
-    setShowYear(false); setView("journal"); setTopicFilter(""); setFavFilter(false); setQuery("");
+    setShowYear(false); viewTop("journal"); setView("journal"); setTopicFilter(""); setFavFilter(false); setQuery("");
     setJf({ ...JF_DEFAULT, from: k, to: k });
     window.scrollTo(0, 0);
   };
@@ -5983,7 +6089,7 @@ Digest:
     updateSettings({ savedPrompts: next });
   };
   const deletePrompt = (id) => updateSettings({ savedPrompts: savedPrompts.filter((p) => p.id !== id) });
-  const usePrompt = (p) => { setWelcome(p.text); setShowCustomize(false); setView("journal"); window.scrollTo(0, 0); };
+  const usePrompt = (p) => { setWelcome(p.text); setShowCustomize(false); viewTop("journal"); setView("journal"); };
   const cycleSavedPrompt = () => {
     if (!savedPrompts.length) return;
     const i = savedPrompts.findIndex((p) => p.text === welcome);
@@ -6362,6 +6468,16 @@ Digest:
         .xo-tab.on { background: var(--strong); color: var(--bg); font-weight: 600; }
         .xo-tab:focus-visible { outline: 2px solid var(--accent); }
         .xo-spacer { flex: 1; }
+        /* iPad portrait / split view: logo + search + Customize on one row, tabs on their own row below */
+        @media (min-width: 701px) and (max-width: 1023px) {
+          .xo-top { flex-wrap: wrap; row-gap: 10px; }
+          .xo-brand { order: 0; }
+          .xo-spacer { order: 1; }
+          .lx-searchbtn { order: 2; }
+          .xo-gear { order: 3; }
+          .xo-tabs { order: 4; width: 100%; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; justify-content: space-between; }
+          .xo-tabs::-webkit-scrollbar { display: none; }
+        }
         .xo-gear { background: transparent; border: 1px solid var(--dash); color: var(--faint); padding: 8px 16px; border-radius: 99px; cursor: pointer; font: 500 12.5px var(--bodyfont); transition: all .2s; white-space: nowrap; }
         .xo-gear:hover { color: var(--ink); border-color: var(--faint); transform: translateY(-1px); }
         .xo-gear:focus-visible { outline: 2px solid var(--accent); }
@@ -6394,7 +6510,8 @@ Digest:
            half of every panel off-screen. min-width:0 lets items shrink to the track. */
         .xo-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
         .xo-grid2 > *, .xo-side > * { min-width: 0; }
-        .xo-side { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; scrollbar-width: thin; }
+        /* the rail scrolls with the page: no second scrollbar inside it */
+        .xo-side { position: static; }
         /* Below desktop: rail collapses under the feed */
         @media (max-width: 1023px) {
           .xo-grid2 { grid-template-columns: minmax(0, 1fr); }
@@ -6419,7 +6536,7 @@ Digest:
         }
         /* Reading measure on 1-column iPad widths */
         @media (min-width: 700px) and (max-width: 1023px) {
-          .xo-segmain, .xo-body, .xo-promptcard, .xo-recapbox { max-width: 68ch; }
+          .xo-segmain, .xo-body, .xo-recapbox { max-width: 68ch; }
         }
 
         .xo-panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px; margin: 0 0 14px; transition: border-color .25s; }
@@ -6782,8 +6899,11 @@ Digest:
           .xo-dayhead { padding: 12px 14px; gap: 8px; }
           .xo-daybody { padding: 0 10px 10px; }
           .xo-section { padding: 11px 12px; }
-          .xo-seg { grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; }
-          .xo-emolabel { font-size: 8.5px; letter-spacing: 0.05em; }
+          /* phone: the text gets the full width; mood + actions sit in a quiet row underneath */
+          .xo-seg { grid-template-columns: minmax(0, 1fr); gap: 0; }
+          .xo-segside { flex-direction: row; align-items: center; justify-content: space-between; padding-top: 2px; min-height: 30px; }
+          .xo-segside .xo-segacts { opacity: .6; }
+          .xo-emolabel { font-size: 9px; letter-spacing: 0.08em; }
           .xo-sidetopic { max-width: 56px; }
           .xo-segacts { opacity: 1; gap: 0; }
           .xo-act { padding: 3px; font-size: 15px; }
@@ -6963,6 +7083,13 @@ Digest:
         /* ---------- filter bar + tag dropdown ---------- */
         .xo-filterbar { display: flex; gap: 10px; margin: 0 0 12px; align-items: stretch; flex-wrap: wrap; }
         .xo-filterbar > .xo-search { flex: 1; min-width: 180px; }
+        /* phone: search gets its own row; tags + filters split the next one evenly (no orphan button) */
+        @media (max-width: 700px) {
+          .xo-filterbar { gap: 8px; }
+          .xo-filterbar > .xo-search { flex: 1 1 100%; }
+          .xo-filterbar > .xo-tagdrop, .xo-filterbar > .lx-filterbtn { flex: 0 0 calc(50% - 4px); min-width: 0; max-width: none; }
+          .xo-filterbar > .xo-tagdrop > button { width: 100%; box-sizing: border-box; }
+        }
         .xo-tagdrop { position: relative; flex: none; }
         .xo-tagdropbtn { display: inline-flex; align-items: center; gap: 8px; height: 100%; min-height: 38px;
           background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--body);
@@ -7230,8 +7357,8 @@ Digest:
       {showYear && <YearMap days={days} onClose={() => setShowYear(false)} onOpenDay={openDay} />}
       {showSearch && (
         <GlobalSearch days={days} onClose={() => setShowSearch(false)}
-          onOpenDay={(k, text) => { setShowSearch(false); setView("journal"); setTopicFilter(""); setFavFilter(false); setJf({ ...JF_DEFAULT }); setQuery(text); window.scrollTo(0, 0); }}
-          onOpenNote={(id) => { setShowSearch(false); setNpOpenId(id); setView("notepad"); window.scrollTo(0, 0); }} />
+          onOpenDay={(k, text) => { setShowSearch(false); viewTop("journal"); setView("journal"); setTopicFilter(""); setFavFilter(false); setJf({ ...JF_DEFAULT }); setQuery(text); }}
+          onOpenNote={(id) => { setShowSearch(false); setNpOpenId(id); viewTop("notepad"); setView("notepad"); }} />
       )}
       {showJF && (
         <JournalFilterSheet f={jf} setF={setJf} onClose={() => setShowJF(false)} matchCount={filteredDays.length}
@@ -7251,18 +7378,18 @@ Digest:
             </div>
           </div>
           <div className="xo-tabs">
-            <button className={view === "journal" ? "xo-tab on" : "xo-tab"} onClick={() => setView("journal")}>Journal</button>
-            <button className={view === "schedule" ? "xo-tab on" : "xo-tab"} onClick={() => setView("schedule")}>
+            <button className={view === "journal" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("journal")}>Journal</button>
+            <button className={view === "schedule" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("schedule")}>
               Schedule{schedOpenCount > 0 ? ` (${schedOpenCount})` : ""}
             </button>
-            <button className={view === "goals" ? "xo-tab on" : "xo-tab"} onClick={() => setView("goals")}>Growth</button>
-            <button className={view === "photos" ? "xo-tab on" : "xo-tab"} onClick={() => setView("photos")}>
+            <button className={view === "goals" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("goals")}>Growth</button>
+            <button className={view === "photos" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("photos")}>
               Photos{allPhotos.length > 0 ? ` (${allPhotos.length})` : ""}
             </button>
-            <button className={view === "notepad" ? "xo-tab on" : "xo-tab"} onClick={() => setView("notepad")}>Notepad</button>
-            <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => setView("ask")}>{aiName || "Ask"}</button>
-            <button className={view === "insights" ? "xo-tab on" : "xo-tab"} onClick={() => setView("insights")}>Insights</button>
-            <button className={view === "trash" ? "xo-tab on" : "xo-tab"} onClick={() => setView("trash")}>
+            <button className={view === "notepad" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("notepad")}>Notepad</button>
+            <button className={view === "ask" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("ask")}>{aiName || "Ask"}</button>
+            <button className={view === "insights" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("insights")}>Insights</button>
+            <button className={view === "trash" ? "xo-tab on" : "xo-tab"} onClick={() => tabTo("trash")}>
               Deleted{trash.length > 0 ? ` (${trash.length})` : ""}
             </button>
           </div>
@@ -7298,213 +7425,280 @@ Digest:
         )}
 
         {showCustomize && (
-          <div className="xo-panel xo-custom">
-            <label htmlFor="xo-name">Journal name</label>
-            <input
-              id="xo-name"
-              type="text"
-              value={settings.name}
-              onChange={(e) => updateSettings({ name: e.target.value })}
-              placeholder="Name your journal"
-            />
-            <label htmlFor="xo-tag" style={{ marginTop: 14 }}>Subtitle (optional — leave blank and the AI writes one from your entries)</label>
-            <input
-              id="xo-tag"
-              type="text"
-              value={settings.customTagline}
-              onChange={(e) => updateSettings({ customTagline: e.target.value })}
-              placeholder="Your own line under the title"
-            />
-            <label htmlFor="xo-ainame" style={{ marginTop: 14 }}>Name your AI (it'll answer to this, and sign its replies with it)</label>
-            <input
-              id="xo-ainame"
-              type="text"
-              value={settings.aiName || ""}
-              onChange={(e) => updateSettings({ aiName: e.target.value })}
-              placeholder="e.g. Kuro, Sage, Ghost — leave blank for just “AI”"
-            />
+          <div className="lx-veil cs-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowCustomize(false); }}>
+          <div className="lx-sheet cs-sheet" role="dialog" aria-modal="true" aria-label="Customize">
+          <div className="lx-sheethead">
+            <b>Customize</b>
+            <button className="xo-panel-done cs-done" onClick={() => setShowCustomize(false)}>Done</button>
+          </div>
+          <div className="lx-sheetbody">
+          <div className="xo-panel xo-custom cs-list">
+            <CustSec id="profile" title="Profile" sub={(settings.name || "Journal") + (aiName ? " · AI: " + aiName : "")} open={custOpen} onToggle={toggleCust}>
+              <label htmlFor="xo-name">Journal name</label>
+              <input
+                id="xo-name"
+                type="text"
+                value={settings.name}
+                onChange={(e) => updateSettings({ name: e.target.value })}
+                placeholder="Name your journal"
+              />
+              <label htmlFor="xo-tag" style={{ marginTop: 14 }}>Subtitle</label>
+              <input
+                id="xo-tag"
+                type="text"
+                value={settings.customTagline}
+                onChange={(e) => updateSettings({ customTagline: e.target.value })}
+                placeholder="Leave blank and the AI writes one"
+              />
+              <label htmlFor="xo-ainame" style={{ marginTop: 14 }}>Your AI's name</label>
+              <input
+                id="xo-ainame"
+                type="text"
+                value={settings.aiName || ""}
+                onChange={(e) => updateSettings({ aiName: e.target.value })}
+                placeholder="Kuro, Sage, Ghost… or leave blank"
+              />
+            </CustSec>
 
-            <label style={{ marginTop: 14 }}>Reminders</label>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-              {[[true, "On"], [false, "Off"]].map(([val, lbl]) => (
-                <button
-                  key={String(val)}
-                  className={!!settings.remindersOn === val ? "xo-topicchip on" : "xo-topicchip"}
-                  disabled={pushBusy}
-                  onClick={() => toggleReminders(val)}
-                >
-                  {pushBusy && val === !settings.remindersOn ? "…" : lbl}
-                </button>
-              ))}
-            </div>
-            {settings.remindersOn && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                <span className="xo-note" style={{ margin: 0 }}>Daily journal nudge at</span>
-                <input type="time" className="xo-search" style={{ width: "auto" }}
-                  value={settings.reminderTime || "20:00"}
-                  onChange={(e) => changeReminderTime(e.target.value)} />
+            <CustSec id="look" title="Look and feel" sub={((THEMES[settings.theme] || {}).label || "Theme") + " · " + ({ sans: "Clean", serif: "Serif", hand: "Handwriting", type: "Typewriter" })[entryFont]} open={custOpen} onToggle={toggleCust}>
+              <label>Theme presets</label>
+              <div className="xo-presets">
+                {ALBUM_PRESETS.map((p) => {
+                  const t = THEMES[p.theme];
+                  const b = BACKGROUNDS[p.bg];
+                  const on = settings.theme === p.theme && settings.bg === p.bg;
+                  return (
+                    <button
+                      key={p.id}
+                      className={on ? "xo-preset on" : "xo-preset"}
+                      style={{
+                        background: b.bg,
+                        borderColor: on ? t.accent : b.line,
+                        boxShadow: on ? "0 0 12px " + t.accent + "55" : undefined,
+                      }}
+                      title={t.label + " on " + b.label}
+                      onClick={() => updateSettings({ theme: p.theme, bg: p.bg })}
+                    >
+                      <i style={{ background: t.accent, boxShadow: "0 0 8px " + t.accent }} />
+                      <span style={{ color: b.ink }}>{p.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
-            <p className="xo-note" style={{ marginTop: 8 }}>
-              On by default — you get a notification a few minutes before anything on your Schedule, plus a
-              once-daily nudge to journal if you haven't written by your chosen time. Switch off here on any
-              device you don't want buzzing.{" "}
-              <b>On iPhone, add the app to your Home Screen and open it from there</b> — then just tap
-              <b> Allow</b> when your phone asks.
-            </p>
-            {pushMsg && <p className="xo-weberr" style={{ marginTop: 6 }}>{pushMsg}</p>}
-
-            <label style={{ marginTop: 14 }}>AI &amp; your data</label>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-              {[["no", "Off"], ["yes", "Allow AI features"]].map(([val, lbl]) => (
-                <button
-                  key={val}
-                  className={(aiConsent || "no") === val ? "xo-topicchip on" : "xo-topicchip"}
-                  onClick={() => setAIConsent(val)}
-                >
-                  {lbl}
-                </button>
-              ))}
-            </div>
-            <details className="xo-note" style={{ marginTop: 8 }}>
-              <summary style={{ cursor: "pointer" }}>What's shared, and with whom</summary>
-              <style>{AC_CSS}</style>
-              <div style={{ marginTop: 8 }}><AIDisclosure /></div>
-            </details>
-
-            <label style={{ marginTop: 14 }}>Writing style</label>
-            <div className="xo-topicchips" style={{ marginBottom: 8 }}>
-              {[["sans", "Clean"], ["serif", "Serif"], ["hand", "Handwriting"], ["type", "Typewriter"]].map(([v, l]) => (
-                <button key={v} className={entryFont === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => updateSettings({ entryFont: v })}>{l}</button>
-              ))}
-            </div>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }} role="group" aria-label="Paper">
-              {[["none", "Plain"], ["lined", "Lined"], ["dots", "Dotted"]].map(([v, l]) => (
-                <button key={v} className={entryPaper === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => updateSettings({ entryPaper: v })}>{l}</button>
-              ))}
-            </div>
-            <div className={"lx-fontprev p-" + entryPaper} style={{ fontFamily: ENTRY_FONTS[entryFont] }}>The quick brown fox kept a journal. Today it wrote about the walk home.</div>
-            <p className="xo-note" style={{ marginTop: 8 }}>Changes how your journal entries look and how you write them. Notepad keeps its own font and paper.</p>
-
-            <label style={{ marginTop: 14 }}>Cover photos</label>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-              {[[true, "On"], [false, "Off"]].map(([v, l]) => (
-                <button key={String(v)} className={(settings.covers !== false) === v ? "xo-topicchip on" : "xo-topicchip"}
-                  onClick={() => updateSettings({ covers: v })}>{l}</button>
-              ))}
-            </div>
-            <p className="xo-note" style={{ marginTop: 8 }}>
-              Tap ▣ on any photo in your journal to make it that day's cover. Tap it again to remove it.
-            </p>
-
-            <label style={{ marginTop: 14 }}>Today card</label>
-            <p className="xo-note" style={{ marginTop: 4 }}>
-              Choose and reorder its blocks (mood, streak, on this day, gratitude, daily line) with "Edit this card" at the bottom of the Today card.
-            </p>
-
-            <label style={{ marginTop: 14 }}>Streak freeze</label>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-              {[[true, "On"], [false, "Off"]].map(([v, l]) => (
-                <button key={String(v)} className={(settings.streakFreeze !== false) === v ? "xo-topicchip on" : "xo-topicchip"}
-                  onClick={() => updateSettings({ streakFreeze: v })}>{l}</button>
-              ))}
-            </div>
-            <p className="xo-note" style={{ marginTop: 8 }}>
-              One missed day a week won't reset your streak, as long as you wrote the day before and the day after.
-            </p>
-
-            <label style={{ marginTop: 14 }}>Weekly letter</label>
-            <div className="xo-topicchips" style={{ marginBottom: 8 }}>
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((l, i) => (
-                <button key={l} className={(Number.isInteger(settings.letterDay) ? settings.letterDay : 0) === i ? "xo-topicchip on" : "xo-topicchip"}
-                  onClick={() => updateSettings({ letterDay: i })}>{l}</button>
-              ))}
-            </div>
-            <select className="lx-select" aria-label="Weekly letter time"
-              value={Number.isInteger(settings.letterHour) ? settings.letterHour : 0}
-              onChange={(e) => updateSettings({ letterHour: parseInt(e.target.value, 10) })}>
-              {Array.from({ length: 24 }, (_, h) => (
-                <option key={h} value={h}>{h === 0 ? "12 AM" : h < 12 ? h + " AM" : h === 12 ? "12 PM" : (h - 12) + " PM"}</option>
-              ))}
-            </select>
-            <p className="xo-note" style={{ marginTop: 8 }}>
-              Your AI-written letter arrives the first time you open Lucid after this day and time. It includes a bright spot from your week and an older note worth revisiting.
-            </p>
-
-            <label style={{ marginTop: 14 }}>Saved prompts</label>
-            {savedPrompts.length === 0 ? (
-              <p className="xo-note" style={{ marginTop: 4 }}>Tap ☆ on a prompt in your journal to keep it here. You can reorder them and reuse them any time.</p>
-            ) : (
-              <ul className="lx-promptlist">
-                {savedPrompts.map((p, i) => (
-                  <li key={p.id}>
-                    <span>{p.text}</span>
-                    <button onClick={() => usePrompt(p)}>Use</button>
-                    <button onClick={() => movePrompt(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
-                    <button onClick={() => movePrompt(i, 1)} disabled={i === savedPrompts.length - 1} aria-label="Move down">↓</button>
-                    <button onClick={() => deletePrompt(p.id)} aria-label="Delete saved prompt">×</button>
-                  </li>
+              <label style={{ marginTop: 16 }}>Accent color</label>
+              <div className="xo-swatches">
+                {Object.entries(THEMES).map(([key, t]) => (
+                  <button
+                    key={key}
+                    className={settings.theme === key ? "xo-swatch sel" : "xo-swatch"}
+                    style={{ background: t.accent, color: t.accent }}
+                    title={t.label}
+                    aria-label={"Accent: " + t.label}
+                    onClick={() => updateSettings({ theme: key })}
+                  />
                 ))}
-              </ul>
-            )}
+              </div>
+              <label style={{ marginTop: 16 }}>Background</label>
+              <div className="xo-swatches">
+                {Object.entries(BACKGROUNDS).map(([key, b]) => (
+                  <button
+                    key={key}
+                    className={settings.bg === key ? "xo-swatch sel" : "xo-swatch"}
+                    style={{ background: b.bg, color: b.bg, border: "2px solid " + b.line }}
+                    title={b.label}
+                    aria-label={"Background: " + b.label}
+                    onClick={() => updateSettings({ bg: key })}
+                  />
+                ))}
+              </div>
+              <label style={{ marginTop: 16 }}>Writing font</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {[["sans", "Clean"], ["serif", "Serif"], ["hand", "Handwriting"], ["type", "Typewriter"]].map(([v, l]) => (
+                  <button key={v} className={entryFont === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => updateSettings({ entryFont: v })}>{l}</button>
+                ))}
+              </div>
+              <label style={{ marginTop: 14 }}>Paper</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }} role="group" aria-label="Paper">
+                {[["none", "Plain"], ["lined", "Lined"], ["dots", "Dotted"]].map(([v, l]) => (
+                  <button key={v} className={entryPaper === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => updateSettings({ entryPaper: v })}>{l}</button>
+                ))}
+              </div>
+              <div className={"lx-fontprev p-" + entryPaper} style={{ fontFamily: ENTRY_FONTS[entryFont] }}>The quick brown fox kept a journal. Today it wrote about the walk home.</div>
+              <label style={{ marginTop: 14 }}>Cover photos</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {[[true, "On"], [false, "Off"]].map(([v, l]) => (
+                  <button key={String(v)} className={(settings.covers !== false) === v ? "xo-topicchip on" : "xo-topicchip"}
+                    onClick={() => updateSettings({ covers: v })}>{l}</button>
+                ))}
+              </div>
+              <p className="xo-note cs-hint">Tap ▣ on a photo in your journal to make it that day's cover.</p>
+            </CustSec>
 
-            {bioAvail && hasPin && (
-              <>
-                <label style={{ marginTop: 14 }}>Face ID</label>
-                <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-                  {[[true, "Unlock with Face ID"], [false, "PIN only"]].map(([v, l]) => (
-                    <button key={String(v)} className={bioOn === v ? "xo-topicchip on" : "xo-topicchip"}
-                      onClick={async () => {
-                        if (v && !(await bioAuthenticate())) return;
-                        setBioOn(v);
-                        try { localStorage.setItem(FACEID_LS, v ? "1" : "0"); } catch (e) { }
-                      }}>{l}</button>
-                  ))}
-                </div>
-                <p className="xo-note" style={{ marginTop: 8 }}>Your PIN still works as a backup. Face ID only replaces typing it.</p>
-              </>
-            )}
+            <CustSec id="habits" title="Today card and streaks" sub={"Streak freeze " + (settings.streakFreeze !== false ? "on" : "off")} open={custOpen} onToggle={toggleCust}>
+              <label>Streak freeze</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {[[true, "On"], [false, "Off"]].map(([v, l]) => (
+                  <button key={String(v)} className={(settings.streakFreeze !== false) === v ? "xo-topicchip on" : "xo-topicchip"}
+                    onClick={() => updateSettings({ streakFreeze: v })}>{l}</button>
+                ))}
+              </div>
+              <p className="xo-note cs-hint">One missed day a week won't reset your streak if you wrote the day before and after.</p>
+              <label style={{ marginTop: 14 }}>Today card</label>
+              <p className="xo-note cs-hint" style={{ marginTop: 0 }}>Use "Edit this card" under the Today card to choose and reorder its blocks.</p>
+            </CustSec>
 
-            <label style={{ marginTop: 14 }}>Web search</label>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-              {[[false, "Off"], [true, "Let " + (aiName || "the AI") + " search the web"]].map(([val, lbl]) => (
-                <button
-                  key={String(val)}
-                  className={webSearch === val ? "xo-topicchip on" : "xo-topicchip"}
-                  onClick={() => updateSettings({ webSearch: val })}
-                >
-                  {lbl}
-                </button>
-              ))}
-            </div>
-            <p className="xo-note" style={{ marginTop: 8 }}>
-              On by default. Used whenever you ask a question (@ai or the {aiName || "Ask"} tab) that needs current
-              info — never for sorting entries or recaps. Answers come with their sources. About a cent per search.
-            </p>
-
-            <label style={{ marginTop: 14 }}>What should your prompts nudge you on?</label>
-            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
-              {["Relationships", "Work", "Health", "Creativity", "Growth", "Money"].map((area) => {
-                const cur = Array.isArray(settings.focus) ? settings.focus : [];
-                const on = cur.includes(area);
-                return (
-                  <button key={area}
-                    className={on ? "xo-topicchip on" : "xo-topicchip"}
-                    onClick={() => updateSettings({ focus: on ? cur.filter((a) => a !== area) : [...cur, area] })}>
-                    {area}
+            <CustSec id="remind" title="Reminders and weekly letter" sub={(settings.remindersOn ? "Reminders on" : "Reminders off") + " · Letter " + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][Number.isInteger(settings.letterDay) ? settings.letterDay : 0]} open={custOpen} onToggle={toggleCust}>
+              <label>Reminders</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {[[true, "On"], [false, "Off"]].map(([val, lbl]) => (
+                  <button
+                    key={String(val)}
+                    className={!!settings.remindersOn === val ? "xo-topicchip on" : "xo-topicchip"}
+                    disabled={pushBusy}
+                    onClick={() => toggleReminders(val)}
+                  >
+                    {pushBusy && val === !settings.remindersOn ? "…" : lbl}
                   </button>
-                );
-              })}
-            </div>
-            <p className="xo-note" style={{ marginTop: 8 }}>
-              Optional. Your prompts lean toward what you pick — only when it fits naturally. Leave all off to keep them wide open.
-            </p>
+                ))}
+              </div>
+              {settings.remindersOn && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+                  <span className="xo-note" style={{ margin: 0 }}>Daily nudge at</span>
+                  <input type="time" className="xo-search" style={{ width: "auto" }}
+                    value={settings.reminderTime || "20:00"}
+                    onChange={(e) => changeReminderTime(e.target.value)} />
+                </div>
+              )}
+              <p className="xo-note cs-hint">
+                A heads-up before anything on your Schedule, plus one nudge if you haven't written by then.
+                {!isNativeApp() && " On iPhone, open Lucid from your Home Screen first, then tap Allow."}
+              </p>
+              {pushMsg && <p className="xo-weberr" style={{ marginTop: 6 }}>{pushMsg}</p>}
+              <label style={{ marginTop: 16 }}>Weekly letter</label>
+              <div className="xo-topicchips" style={{ marginBottom: 8 }}>
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((l, i) => (
+                  <button key={l} className={(Number.isInteger(settings.letterDay) ? settings.letterDay : 0) === i ? "xo-topicchip on" : "xo-topicchip"}
+                    onClick={() => updateSettings({ letterDay: i })}>{l}</button>
+                ))}
+              </div>
+              <select className="lx-select" aria-label="Weekly letter time"
+                value={Number.isInteger(settings.letterHour) ? settings.letterHour : 0}
+                onChange={(e) => updateSettings({ letterHour: parseInt(e.target.value, 10) })}>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>{h === 0 ? "12 AM" : h < 12 ? h + " AM" : h === 12 ? "12 PM" : (h - 12) + " PM"}</option>
+                ))}
+              </select>
+              <p className="xo-note cs-hint">Arrives the first time you open Lucid after this day and time.</p>
+            </CustSec>
+
+            <CustSec id="prompts" title="Prompts" sub={savedPrompts.length ? savedPrompts.length + " saved" : "Nudges and saved prompts"} open={custOpen} onToggle={toggleCust}>
+              <label>Nudge my prompts toward</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {["Relationships", "Work", "Health", "Creativity", "Growth", "Money"].map((area) => {
+                  const cur = Array.isArray(settings.focus) ? settings.focus : [];
+                  const on = cur.includes(area);
+                  return (
+                    <button key={area}
+                      className={on ? "xo-topicchip on" : "xo-topicchip"}
+                      onClick={() => updateSettings({ focus: on ? cur.filter((a) => a !== area) : [...cur, area] })}>
+                      {area}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="xo-note cs-hint">Optional. Leave all off to keep prompts wide open.</p>
+              <label style={{ marginTop: 14 }}>Saved prompts</label>
+              {savedPrompts.length === 0 ? (
+                <p className="xo-note cs-hint" style={{ marginTop: 0 }}>Tap ☆ on a prompt in your journal to keep it here.</p>
+              ) : (
+                <ul className="lx-promptlist">
+                  {savedPrompts.map((p, i) => (
+                    <li key={p.id}>
+                      <span>{p.text}</span>
+                      <button onClick={() => usePrompt(p)}>Use</button>
+                      <button onClick={() => movePrompt(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                      <button onClick={() => movePrompt(i, 1)} disabled={i === savedPrompts.length - 1} aria-label="Move down">↓</button>
+                      <button onClick={() => deletePrompt(p.id)} aria-label="Delete saved prompt">×</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CustSec>
+
+            <CustSec id="privacy" title="AI and privacy" sub={((aiConsent || "no") === "yes" ? "AI on" : "AI off") + " · " + (hasPin ? "PIN lock on" : "No lock")} open={custOpen} onToggle={toggleCust}>
+              <label>AI features</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {[["no", "Off"], ["yes", "Allow AI features"]].map(([val, lbl]) => (
+                  <button
+                    key={val}
+                    className={(aiConsent || "no") === val ? "xo-topicchip on" : "xo-topicchip"}
+                    onClick={() => setAIConsent(val)}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <details className="xo-note cs-hint">
+                <summary style={{ cursor: "pointer" }}>What's shared, and with whom</summary>
+                <style>{AC_CSS}</style>
+                <div style={{ marginTop: 8 }}><AIDisclosure /></div>
+              </details>
+              <label style={{ marginTop: 14 }}>Web search</label>
+              <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                {[[false, "Off"], [true, "Let " + (aiName || "the AI") + " search the web"]].map(([val, lbl]) => (
+                  <button
+                    key={String(val)}
+                    className={webSearch === val ? "xo-topicchip on" : "xo-topicchip"}
+                    onClick={() => updateSettings({ webSearch: val })}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <p className="xo-note cs-hint">Only used when you ask a question that needs current info. Answers show their sources.</p>
+              <label style={{ marginTop: 14 }}>Privacy lock (this device)</label>
+              <div className="xo-panel-row" style={{ marginTop: 4 }}>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="xo-search"
+                  style={{ maxWidth: 180, flex: "none" }}
+                  value={pinField}
+                  onChange={(e) => setPinField(e.target.value.replace(/\D/g, ""))}
+                  placeholder={hasPin ? "Current PIN" : "4+ digit PIN"}
+                />
+                {!hasPin ? (
+                  <button className="xo-panel-btn" onClick={setPin} disabled={pinField.length < 4}>Set PIN</button>
+                ) : (
+                  <>
+                    <button className="xo-panel-btn" onClick={removePin} disabled={pinField.length < 4}>Remove lock</button>
+                    <button className="xo-panel-btn" onClick={() => setLocked(true)}>Lock now</button>
+                  </>
+                )}
+              </div>
+              <p className="xo-note cs-hint">Asks for the PIN whenever the journal opens on this device.</p>
+              {bioAvail && hasPin && (
+                <>
+                  <label style={{ marginTop: 14 }}>Face ID</label>
+                  <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                    {[[true, "Unlock with Face ID"], [false, "PIN only"]].map(([v, l]) => (
+                      <button key={String(v)} className={bioOn === v ? "xo-topicchip on" : "xo-topicchip"}
+                        onClick={async () => {
+                          if (v && !(await bioAuthenticate())) return;
+                          setBioOn(v);
+                          try { localStorage.setItem(FACEID_LS, v ? "1" : "0"); } catch (e) { }
+                        }}>{l}</button>
+                    ))}
+                  </div>
+                  <p className="xo-note cs-hint">Your PIN still works as a backup.</p>
+                </>
+              )}
+            </CustSec>
 
             {allTagRows.length > 0 && (
-              <>
-                <label style={{ marginTop: 14 }}>Tags — {allTagRows.length} in use ({favTags.length} favourite{favTags.length === 1 ? "" : "s"})</label>
+              <CustSec id="tags" title="Tags" sub={allTagRows.length + " in use" + (favTags.length ? " · " + favTags.length + " pinned" : "")} open={custOpen} onToggle={toggleCust}>
                 <p className="xo-note" style={{ margin: "0 0 8px" }}>
-                  Star a tag to pin it to the front of your filters. Rename a tag onto an existing one to merge them — that's how you keep things tidy.
+                  Star a tag to pin it to the front of your filters. Rename a tag onto an existing one to merge them.
                 </p>
                 <div className="xo-tagmgr">
                   {allTagRows.map(([t, n]) => (
@@ -7545,138 +7739,71 @@ Digest:
                     </div>
                   ))}
                 </div>
-              </>
+              </CustSec>
             )}
 
-            <label style={{ marginTop: 14 }}>Theme presets</label>
-            <div className="xo-presets">
-              {ALBUM_PRESETS.map((p) => {
-                const t = THEMES[p.theme];
-                const b = BACKGROUNDS[p.bg];
-                const on = settings.theme === p.theme && settings.bg === p.bg;
-                return (
-                  <button
-                    key={p.id}
-                    className={on ? "xo-preset on" : "xo-preset"}
-                    style={{
-                      background: b.bg,
-                      borderColor: on ? t.accent : b.line,
-                      boxShadow: on ? "0 0 12px " + t.accent + "55" : undefined,
-                    }}
-                    title={t.label + " on " + b.label}
-                    onClick={() => updateSettings({ theme: p.theme, bg: p.bg })}
-                  >
-                    <i style={{ background: t.accent, boxShadow: "0 0 8px " + t.accent }} />
-                    <span style={{ color: b.ink }}>{p.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="xo-note" style={{ marginTop: 8 }}>One tap sets the accent, backdrop, fonts and moving scene together. Mixing your own colors below keeps the clean font.</p>
-            <label style={{ marginTop: 14 }}>Accent color</label>
-            <div className="xo-swatches">
-              {Object.entries(THEMES).map(([key, t]) => (
-                <button
-                  key={key}
-                  className={settings.theme === key ? "xo-swatch sel" : "xo-swatch"}
-                  style={{ background: t.accent, color: t.accent }}
-                  title={t.label}
-                  aria-label={"Accent: " + t.label}
-                  onClick={() => updateSettings({ theme: key })}
-                />
-              ))}
-            </div>
-            <label style={{ marginTop: 14 }}>Background</label>
-            <div className="xo-swatches">
-              {Object.entries(BACKGROUNDS).map(([key, b]) => (
-                <button
-                  key={key}
-                  className={settings.bg === key ? "xo-swatch sel" : "xo-swatch"}
-                  style={{ background: b.bg, color: b.bg, border: "2px solid " + b.line }}
-                  title={b.label}
-                  aria-label={"Background: " + b.label}
-                  onClick={() => updateSettings({ bg: key })}
-                />
-              ))}
-            </div>
-            <label style={{ marginTop: 14 }}>Privacy lock (this device)</label>
-            <div className="xo-panel-row" style={{ marginTop: 4 }}>
-              <input
-                type="password"
-                inputMode="numeric"
-                className="xo-search"
-                style={{ maxWidth: 180, flex: "none" }}
-                value={pinField}
-                onChange={(e) => setPinField(e.target.value.replace(/\D/g, ""))}
-                placeholder={hasPin ? "Current PIN" : "Choose a PIN (4+ digits)"}
-              />
-              {!hasPin ? (
-                <button className="xo-panel-btn" onClick={setPin} disabled={pinField.length < 4}>Set PIN</button>
-              ) : (
+            <CustSec id="data" title="Backup and export" sub="Backups, imports and your year book" open={custOpen} onToggle={toggleCust}>
+              <div className="xo-panel-row" style={{ marginTop: 0 }}>
+                <button className="xo-panel-btn" onClick={backupAll} disabled={backupBusy || !hasEntries}>
+                  {backupBusy ? "Backing up…" : "Backup (.json)"}
+                </button>
+                <input ref={importFileRef} type="file" accept="application/json,.json" style={{ display: "none" }}
+                  onChange={(e) => { importBackup(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+                <button className="xo-panel-btn" onClick={() => importFileRef.current && importFileRef.current.click()} disabled={importBusy}>
+                  {importBusy ? "Importing…" : "Import backup"}
+                </button>
+                <button className="xo-panel-btn" onClick={exportJournal} disabled={!hasEntries}>
+                  Export as text
+                </button>
+              </div>
+              {importMsg && <div style={{ marginTop: 10, fontSize: 14, color: importMsg.startsWith("Imported") ? "var(--accent)" : "#FF8B96" }}>{importMsg}</div>}
+              {hasEntries && (
                 <>
-                  <button className="xo-panel-btn" onClick={removePin} disabled={pinField.length < 4}>Remove lock</button>
-                  <button className="xo-panel-btn" onClick={() => setLocked(true)}>Lock now</button>
+                  <label style={{ marginTop: 16 }}>Year book</label>
+                  <div className="xo-panel-row" style={{ marginTop: 6 }}>
+                    <select className="lx-select" aria-label="Year" value={bookYears.includes(String(bookYear)) ? String(bookYear) : (bookYears[0] || "")}
+                      onChange={(e) => setBookYear(e.target.value)}>
+                      {bookYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <button className="xo-panel-btn" onClick={() => exportBook(bookYears.includes(String(bookYear)) ? String(bookYear) : bookYears[0], "html")} disabled={bookBusy}>
+                      {bookBusy ? "Preparing…" : "Print-ready book (.html)"}
+                    </button>
+                    <button className="xo-panel-btn" onClick={() => exportBook(bookYears.includes(String(bookYear)) ? String(bookYear) : bookYears[0], "md")} disabled={bookBusy}>
+                      Markdown (.md)
+                    </button>
+                  </div>
+                  <p className="xo-note cs-hint">Open the book file and choose Print, then Save as PDF.</p>
                 </>
               )}
-            </div>
-            <p className="xo-note" style={{ marginTop: 6 }}>Asks for the PIN whenever the journal opens on this device.</p>
-            <div className="xo-panel-row">
-              <button className="xo-panel-btn" onClick={exportJournal} disabled={!hasEntries}>
-                Export journal (.txt)
-              </button>
-              <button className="xo-panel-btn" onClick={backupAll} disabled={backupBusy || !hasEntries}>
-                {backupBusy ? "Backing up…" : "Backup (.json)"}
-              </button>
-              <input ref={importFileRef} type="file" accept="application/json,.json" style={{ display: "none" }}
-                onChange={(e) => { importBackup(e.target.files && e.target.files[0]); e.target.value = ""; }} />
-              <button className="xo-panel-btn" onClick={() => importFileRef.current && importFileRef.current.click()} disabled={importBusy}>
-                {importBusy ? "Importing…" : "Import backup (.json)"}
-              </button>
-              <button className="xo-panel-btn" onClick={() => window.__signOut && window.__signOut()}>
-                Sign out
-              </button>
-              <button className="xo-panel-done" style={{ margin: 0 }} onClick={() => setShowCustomize(false)}>Done</button>
-            </div>
-            {importMsg && <div style={{ marginTop: 10, fontSize: 14, color: importMsg.startsWith("Imported") ? "var(--accent)" : "#FF8B96" }}>{importMsg}</div>}
+            </CustSec>
 
-            {hasEntries && (
-              <div style={{ marginTop: 18 }}>
-                <label style={{ marginTop: 0 }}>Year book</label>
-                <div className="xo-panel-row" style={{ marginTop: 6 }}>
-                  <select className="lx-select" aria-label="Year" value={bookYears.includes(String(bookYear)) ? String(bookYear) : (bookYears[0] || "")}
-                    onChange={(e) => setBookYear(e.target.value)}>
-                    {bookYears.map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                  <button className="xo-panel-btn" onClick={() => exportBook(bookYears.includes(String(bookYear)) ? String(bookYear) : bookYears[0], "html")} disabled={bookBusy}>
-                    {bookBusy ? "Preparing…" : "Print-ready book (.html)"}
-                  </button>
-                  <button className="xo-panel-btn" onClick={() => exportBook(bookYears.includes(String(bookYear)) ? String(bookYear) : bookYears[0], "md")} disabled={bookBusy}>
-                    Markdown (.md)
-                  </button>
-                </div>
-                <p className="xo-note" style={{ marginTop: 8 }}>
-                  The book has a cover, every month, your moods in color and your photos. Open the file and choose Print, then Save as PDF.
-                </p>
+            <CustSec id="account" title="Account" sub={(window.__session && window.__session.user && window.__session.user.email) || "Sign out or delete"} open={custOpen} onToggle={toggleCust}>
+              <div className="xo-panel-row" style={{ marginTop: 0 }}>
+                <button className="xo-panel-btn" onClick={() => window.__signOut && window.__signOut()}>
+                  Sign out
+                </button>
               </div>
-            )}
-
-            <div className="xo-danger">
-              <label style={{ marginTop: 0 }}>Delete account</label>
-              <p className="xo-note" style={{ margin: "0 0 10px" }}>
-                Permanently deletes your account and every entry, photo, and setting. This can't be undone.
-                {" "}Export a backup first if you want to keep your journal.
-              </p>
-              {!confirmDelete ? (
-                <button className="xo-danger-btn" onClick={() => setConfirmDelete(true)} disabled={deleteBusy}>Delete my account…</button>
-              ) : (
-                <div className="xo-panel-row" style={{ marginTop: 0 }}>
-                  <button className="xo-danger-btn" onClick={deleteAccount} disabled={deleteBusy}>
-                    {deleteBusy ? "Deleting…" : "Yes, delete everything permanently"}
-                  </button>
-                  <button className="xo-panel-btn" onClick={() => setConfirmDelete(false)} disabled={deleteBusy}>Cancel</button>
-                </div>
-              )}
-            </div>
+              <div className="xo-danger">
+                <label style={{ marginTop: 0 }}>Delete account</label>
+                <p className="xo-note" style={{ margin: "0 0 10px" }}>
+                  Permanently deletes your account and every entry, photo, and setting. This can't be undone.
+                  {" "}Export a backup first if you want to keep your journal.
+                </p>
+                {!confirmDelete ? (
+                  <button className="xo-danger-btn" onClick={() => setConfirmDelete(true)} disabled={deleteBusy}>Delete my account…</button>
+                ) : (
+                  <div className="xo-panel-row" style={{ marginTop: 0 }}>
+                    <button className="xo-danger-btn" onClick={deleteAccount} disabled={deleteBusy}>
+                      {deleteBusy ? "Deleting…" : "Yes, delete everything permanently"}
+                    </button>
+                    <button className="xo-panel-btn" onClick={() => setConfirmDelete(false)} disabled={deleteBusy}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            </CustSec>
+          </div>
+          </div>
+          </div>
           </div>
         )}
 
@@ -8007,23 +8134,15 @@ Digest:
 
         {view === "journal" && (
           <>
+            <div className="xo-grid2">
+            <div>
             {loaded && (
               <TodayCard days={days} streakInfo={streakInfo} freezeOn={settings.streakFreeze !== false} onCheckIn={doCheckIn} onWrite={focusComposer}
                 blocks={settings.todayBlocks} onBlocks={(b) => updateSettings({ todayBlocks: b })} onGratitude={doGratitude} onOpenDay={openDay} onOpenYear={() => setShowYear(true)} />
             )}
-            {hasEntries && (
-              <div className="xo-kpis">
-                <div className="xo-kpi hero"><h4>Day streak</h4><div className="val">{streak}<span className="unit"> day{streak === 1 ? "" : "s"}</span></div></div>
-                <div className="xo-kpi"><h4>Days journaled</h4><div className="val">{dayKeys.length}</div></div>
-                <div className="xo-kpi"><h4>Notes</h4><div className="val">{totalNotes}</div></div>
-                <div className="xo-kpi"><h4>Top mood — 7d</h4><div className="val mood" style={weekMood ? { color: weekMood.dot } : undefined}>{weekMood ? weekMood.label : "—"}</div></div>
-              </div>
-            )}
-            <div className="xo-grid2">
-            <div>
             {showPromptCard && (
               <div className="xo-promptcard">
-                <b>{hasEntries ? "Been thinking about your last entries…" : "Tonight's prompt"}</b>
+                <b>{hasEntries ? "From your recent entries" : "Tonight's prompt"}</b>
                 <button className="xo-shuffle" title="Show me something else" aria-label="New prompt" onClick={genWelcome} disabled={welcomeBusy}>↻</button>
                 {!welcomeBusy && welcome && (
                   <button className={promptSaved ? "lx-star on" : "lx-star"} style={{ position: "absolute", top: 8, right: 42 }}
@@ -8545,16 +8664,16 @@ Digest:
 
       {/* ---------- phone bottom tab bar (CSS-gated to ≤700px) ---------- */}
       <nav className="xo-tabbar" aria-label="Primary">
-        <button className={view === "journal" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("journal"); }}>
+        <button className={view === "journal" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); tabTo("journal"); }}>
           <NavIcon name="journal" /><span>Journal</span>
         </button>
-        <button className={view === "schedule" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("schedule"); }}>
+        <button className={view === "schedule" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); tabTo("schedule"); }}>
           <NavIcon name="schedule" />{schedOpenCount > 0 && <span className="dot" />}<span>Schedule</span>
         </button>
-        <button className={view === "goals" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("goals"); }}>
+        <button className={view === "goals" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); tabTo("goals"); }}>
           <NavIcon name="growth" /><span>Growth</span>
         </button>
-        <button className={view === "ask" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); setView("ask"); }}>
+        <button className={view === "ask" ? "xo-tabitem on" : "xo-tabitem"} onClick={() => { haptic("select"); tabTo("ask"); }}>
           <NavIcon name="ask" /><span>{aiName || "Ask"}</span>
         </button>
         <button
