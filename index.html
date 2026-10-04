@@ -356,12 +356,97 @@ const PROMPT_STYLES = [
   "make it quietly challenging — the kind that makes someone pause",
   "phrase it like a wise friend asking late at night",
 ];
+// ---- prompt context: what the AI knows when it writes the next question ----
+const PROMPT_HIST_LS = "lucid:promptHist:v1";
+function promptHistory() { try { const a = JSON.parse(localStorage.getItem(PROMPT_HIST_LS) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function rememberPrompt(t) {
+  const s = String(t || "").trim();
+  if (!s) return;
+  try { const a = promptHistory().filter((x) => x !== s); a.push(s); localStorage.setItem(PROMPT_HIST_LS, JSON.stringify(a.slice(-14))); } catch (e) { }
+}
+const cleanPrompt = (t) => String(t || "").replace(/^["'“‘\s]+|["'”’\s]+$/g, "").trim();
+// the best line from a day to show back to the person: their longest real entry, not a check-in or AI text
+function memoryOf(day) {
+  let best = null;
+  for (const en of (day && day.entries) || []) for (const sg of en.segments || []) {
+    if (sg.type && sg.type !== "text") continue;
+    if (sg.topic === "Check-in" || sg.topic === "Weekly Letter") continue;
+    const t = String(sg.text || "").replace(/\s+/g, " ").trim();
+    if (t.length >= 12 && (!best || t.length > best.text.length)) best = { text: t, emotion: (sg.emotion || "neutral").toLowerCase() };
+  }
+  if (!best) return null;
+  if (best.text.length > 190) best.text = best.text.slice(0, 190).replace(/\s+\S*$/, "") + "…";
+  return best;
+}
+// entries from this date in earlier years (or, failing that, a few months back)
+function memoriesFor(days, from = new Date()) {
+  const out = [];
+  const add = (d, label) => { const k = dayKey(d); const m = memoryOf(days[k]); if (m) out.push({ k, label, ...m }); };
+  for (let y = 1; y <= 5; y++) {
+    const d = new Date(from.getFullYear() - y, from.getMonth(), from.getDate());
+    if (d.getMonth() === from.getMonth()) add(d, y === 1 ? "1 year ago" : y + " years ago");
+  }
+  if (!out.length) [[182, "6 months ago"], [91, "3 months ago"], [30, "A month ago"]].forEach(([n, label]) => {
+    if (out.length) return;
+    const d = new Date(from); d.setDate(d.getDate() - n); add(d, label);
+  });
+  return out;
+}
+function valenceBetween(days, fromOff, toOff) {
+  let v = 0, n = 0;
+  for (let o = fromOff; o > toOff; o--) {
+    const d = new Date(); d.setDate(d.getDate() - o);
+    const day = days[dayKey(d)];
+    if (!day) continue;
+    for (const en of day.entries || []) for (const sg of en.segments || []) {
+      const e = (sg.emotion || "neutral").toLowerCase();
+      if (e in VALENCE) { v += VALENCE[e]; n++; }
+    }
+  }
+  return n ? { avg: v / n, n } : null;
+}
+function tagCountsBetween(days, fromOff, toOff) {
+  const c = {};
+  for (let o = fromOff; o > toOff; o--) {
+    const d = new Date(); d.setDate(d.getDate() - o);
+    const day = days[dayKey(d)];
+    if (!day) continue;
+    for (const en of day.entries || []) for (const sg of en.segments || []) {
+      if (sg.type && sg.type !== "text") continue;
+      for (const t of segTags(sg)) if (!SKIP_TAGS.has(t)) c[t] = (c[t] || 0) + 1;
+    }
+  }
+  return c;
+}
+function buildPromptContext(days) {
+  const now = new Date();
+  const lines = ["Right now: " + now.toLocaleDateString("en-US", { weekday: "long" }) + " " + dayPart(now.getHours()) + "."];
+  const wk = valenceBetween(days, 6, -1), before = valenceBetween(days, 27, 6);
+  if (wk && before && wk.n >= 3 && before.n >= 6) {
+    const diff = wk.avg - before.avg;
+    lines.push("Their mood this past week has been " + (diff > 0.6 ? "noticeably brighter than" : diff < -0.6 ? "noticeably heavier than" : "about the same as") + " the weeks before it. (Never say this out loud; let it shape your warmth.)");
+  }
+  const recent = tagCountsBetween(days, 6, -1), older = tagCountsBetween(days, 59, 6);
+  const onMind = Object.entries(recent).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t]) => t);
+  if (onMind.length) lines.push("Themes on their mind this week: " + onMind.join(", ") + ".");
+  const quiet = Object.entries(older).filter(([t, n]) => n >= 3 && !recent[t]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
+  if (quiet.length) lines.push("Threads they wrote about often earlier but not this week: " + quiet.join(", ") + " (you may gently ask what became of one).");
+  const otd = memoriesFor(days)[0];
+  if (otd) lines.push(otd.label + " today, they wrote: \"" + otd.text + "\" (you may bring it up if it fits).");
+  return lines.join("\n");
+}
+
 // One brand-new journaling question, generated fresh each time. Never repeats.
 async function genFreshPrompt() {
   const theme = PROMPT_THEMES[Math.floor(Math.random() * PROMPT_THEMES.length)];
   const style = PROMPT_STYLES[Math.floor(Math.random() * PROMPT_STYLES.length)];
-  const text = await callClaude(`Write ONE short journaling prompt: a single question that invites honest self-reflection. Territory to explore: ${theme}. Style: ${style}. Make it specific, human, and unexpected — not a cliche anyone has seen a hundred times, and not generic. Under 20 words. Output only the question itself — no quotes, no preamble, no markdown.`, 60);
-  return text.replace(/^["']+|["']+$/g, "").trim() || STARTER_PROMPTS[Math.floor(Math.random() * STARTER_PROMPTS.length)];
+  const recentP = promptHistory().slice(-8);
+  const nowD = new Date();
+  const when = "It is " + nowD.toLocaleDateString("en-US", { weekday: "long" }) + " " + dayPart(nowD.getHours()) + " for them; let that colour it if natural.";
+  const text = await callClaude(`Write ONE short journaling prompt: a single question that invites honest self-reflection. Territory to explore: ${theme}. Style: ${style}. Make it specific, human, and unexpected — not a cliche anyone has seen a hundred times, and not generic. Under 20 words. ${when}${recentP.length ? " Do NOT repeat or closely echo any of these recent prompts: " + recentP.join(" | ") + "." : ""} Output only the question itself — no quotes, no preamble, no markdown.`, 60);
+  const out = cleanPrompt(text) || STARTER_PROMPTS[Math.floor(Math.random() * STARTER_PROMPTS.length)];
+  rememberPrompt(out);
+  return out;
 }
 
 // The AI welcome-back note ends with a question. Rotate the KIND of question so
@@ -580,7 +665,97 @@ async function callClaude(prompt, maxTokens = 1000) {
   return (await callClaudeRaw(prompt, maxTokens)).text;
 }
 
-async function classifyEntry(text, vibeText, existingTopics = []) {
+// ---- sorting accuracy helpers ----
+const BAD_TAGS = ["daily reflection", "journal entry", "personal thoughts", "reflection", "notes", "note", "life", "update", "misc", "general", "thoughts", "entry"];
+const SKIP_TAGS = new Set(["Check-in", "Weekly Letter", "Photos", "AI Answers", "Unsorted", "Notes", "Voice Note"]);
+const EMO_SYN = {
+  stressed: "overwhelmed", swamped: "overwhelmed", burnedout: "overwhelmed", burnout: "overwhelmed", worried: "anxious", nervous: "anxious", scared: "anxious", afraid: "anxious",
+  fearful: "anxious", uneasy: "anxious", joy: "happy", joyful: "happy", glad: "happy", cheerful: "happy", delighted: "happy", depressed: "sad", down: "sad", upset: "sad", hurt: "sad",
+  heartbroken: "sad", grief: "sad", mad: "angry", furious: "angry", irritated: "frustrated", annoyed: "frustrated", peaceful: "calm", relaxed: "calm", serene: "calm", thankful: "grateful",
+  appreciative: "grateful", optimistic: "hopeful", exhausted: "tired", drained: "tired", sleepy: "tired", ashamed: "guilty", embarrassed: "guilty", regretful: "guilty", isolated: "lonely",
+  satisfied: "content", fulfilled: "content", thrilled: "excited", eager: "excited", determined: "motivated", driven: "motivated", accomplished: "proud", unsure: "insecure", doubtful: "insecure",
+  wistful: "nostalgic", sentimental: "nostalgic", bored: "neutral", okay: "neutral", fine: "neutral", cared: "loved", relief: "relieved", creative: "inspired",
+};
+function normEmotion(e) {
+  const s = String(e || "").toLowerCase().replace(/[^a-z ]/g, "").trim();
+  if (EMOTIONS[s]) return s;
+  const flat = s.replace(/ /g, "");
+  if (EMO_SYN[flat]) return EMO_SYN[flat];
+  const first = s.split(" ")[0];
+  if (EMOTIONS[first]) return first;
+  if (EMO_SYN[first]) return EMO_SYN[first];
+  return "neutral";
+}
+const tagKey = (t) => { const k = String(t || "").toLowerCase().replace(/[^a-z0-9]/g, ""); return k.length > 4 && k.endsWith("s") ? k.slice(0, -1) : k; };
+function oneEditApart(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+function tagLookup(list) {
+  const m = new Map();
+  (list || []).forEach((t) => { const k = tagKey(t); if (k && !m.has(k)) m.set(k, t); });
+  return m;
+}
+// Reuse the spelling of a tag the person already has (case, plural, one-letter typo) instead of
+// creating a near-duplicate; brand-new tags are tidied into Title Case.
+function canonTag(t, known) {
+  let s = String(t || "").replace(/^[#"'\s]+|["'\s]+$/g, "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  const k = tagKey(s);
+  if (known.has(k)) return known.get(k);
+  if (k.length >= 6) for (const [kk, name] of known) if (kk.length >= 6 && oneEditApart(k, kk)) return name;
+  s = s.slice(0, 40).split(" ").map((w) => (w.length > 1 && w === w.toUpperCase() && w.length <= 4 ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
+  return s;
+}
+// If the model dropped or reworded the person's writing, keep their exact words in one piece
+// (tagged from what it did return) rather than silently losing text.
+function repairSegments(original, segs) {
+  const N = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const o = N(original);
+  if (!segs.length || o.length < 24) return segs;
+  let found = 0, total = 0;
+  for (const s of segs) { const n = N(s.text); total += n.length; if (n && o.includes(n)) found += n.length; }
+  if (found / o.length >= 0.9 && total / o.length <= 1.2) return segs;
+  const tagN = {}, emoN = {};
+  segs.forEach((s) => { (s.tags || []).forEach((t) => { tagN[t] = (tagN[t] || 0) + 1; }); emoN[s.emotion] = (emoN[s.emotion] || 0) + 1; });
+  const tags = Object.entries(tagN).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t]) => t);
+  const emo = (Object.entries(emoN).sort((a, b) => b[1] - a[1])[0] || ["neutral"])[0];
+  return [{ text: String(original).trim(), tags: tags.length ? tags : ["Unsorted"], topic: (tags[0] || "Unsorted"), emotion: emo }];
+}
+const dayPart = (hr) => (hr < 5 ? "the middle of the night" : hr < 12 ? "morning" : hr < 17 ? "afternoon" : hr < 21 ? "evening" : "late night");
+// What the AI knows about this writer when it sorts a new entry: when it was written, the last few
+// entries (so "she", "the project", "it" resolve), and each recurring tag with the feeling that usually goes with it.
+function buildClassifyContext(days) {
+  const now = new Date();
+  const lines = ["Written: " + now.toLocaleDateString("en-US", { weekday: "long" }) + " " + dayPart(now.getHours()) + "."];
+  const recent = buildDigest(days, 6, 170, 1700);
+  if (recent) lines.push("Their last few entries (oldest first; for context only, do NOT re-label them):\n" + recent);
+  const stat = {};
+  eachSegment(days, (k, en, sg) => {
+    if (sg.type && sg.type !== "text") return;
+    const e = (sg.emotion || "neutral").toLowerCase();
+    for (const t of segTags(sg)) {
+      if (SKIP_TAGS.has(t)) continue;
+      const s = stat[t] || (stat[t] = { n: 0, emo: {} });
+      s.n++; s.emo[e] = (s.emo[e] || 0) + 1;
+    }
+  });
+  const top = Object.entries(stat).sort((a, b) => b[1].n - a[1].n).slice(0, 30).map(([t, s]) => {
+    const e = Object.entries(s.emo).sort((a, b) => b[1] - a[1])[0][0];
+    return t + " (" + s.n + "×, usually " + e + ")";
+  });
+  if (top.length) lines.push("Tags they already use, with how often and the feeling that usually goes with them:\n" + top.join("; "));
+  return lines.join("\n").slice(0, 3600);
+}
+
+async function classifyEntry(text, vibeText, existingTopics = [], ctx = "") {
   const topicHint = existingTopics.length
     ? `\nIMPORTANT for organization: this journal already uses these tags: ${existingTopics.join(", ")}. If a segment fits one of them, REUSE that exact tag (same spelling) instead of inventing a near-duplicate. Only create a new tag when nothing existing fits.`
     : "";
@@ -617,27 +792,28 @@ Also write "tagline": one short line (under 14 words, no quotes, no emoji) for t
 
 Respond with ONLY a raw JSON object: {"segments": [...], "tagline": "..."} — no markdown, no backticks.
 
+${ctx ? "\nWHAT YOU KNOW ABOUT THIS WRITER — use it to resolve references (\"she\", \"it\", \"the project\", nicknames) and to read tone and intensity correctly. Only label what THIS entry actually says; never import feelings or facts from the background:\n" + ctx + "\n" : ""}
+BEFORE YOU ANSWER, CHECK: (1) the segment texts together contain ALL of the entry, in order, word for word, with nothing dropped or reworded; (2) each emotion is what the writer feels, not the mood of the topic; (3) any tag matching one they already use is spelled exactly the same.
+
 Entry:
 """${text}"""`, 8000);
   const parsed = extractJSONObject(raw);
-  const BAD_TAGS = ["daily reflection", "journal entry", "personal thoughts", "reflection", "notes", "note", "life", "update", "misc", "general", "thoughts", "entry"];
-  const segments = (parsed.segments || [])
+  const known = tagLookup(existingTopics);
+  let segments = (parsed.segments || [])
     .filter((s) => s && s.text)
     .map((s) => {
       let tags = Array.isArray(s.tags) ? s.tags : (s.topic ? [s.topic] : []);
-      tags = tags
-        .map((t) => String(t || "").trim())
-        .filter(Boolean)
-        .filter((t) => !BAD_TAGS.includes(t.toLowerCase()))
-        .slice(0, 4);
+      tags = tags.map((t) => canonTag(t, known)).filter(Boolean).filter((t) => !BAD_TAGS.includes(t.toLowerCase()));
+      tags = tags.filter((t, i) => tags.findIndex((u) => u.toLowerCase() === t.toLowerCase()) === i).slice(0, 4);
       if (!tags.length) tags = ["Unsorted"];
       return {
         text: String(s.text).trim(),
         tags,
         topic: tags[0], // primary tag — keeps older code/data paths working
-        emotion: String(s.emotion || "neutral").toLowerCase(),
+        emotion: normEmotion(s.emotion),
       };
     });
+  segments = repairSegments(text, segments);
   return { segments, tagline: String(parsed.tagline || "").trim() };
 }
 
@@ -712,13 +888,18 @@ async function withRetry(fn, tries = 2) {
   throw lastErr;
 }
 
-async function classifyLongEntry(text, vibeText, existingTopics = []) {
+async function classifyLongEntry(text, vibeText, existingTopics = [], ctx = "") {
   const chunks = splitIntoChunks(text);
   const allSegments = [];
+  const topics = existingTopics.slice();
   let tagline = "";
-  for (const chunk of chunks) {
-    const result = await withRetry(() => classifyEntry(chunk, vibeText, existingTopics));
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const part = chunks.length > 1 ? "\nThis is part " + (i + 1) + " of " + chunks.length + " of one long entry. Keep tag spelling consistent with the earlier parts." : "";
+    const result = await withRetry(() => classifyEntry(chunk, vibeText, topics, ctx + part));
     allSegments.push(...result.segments);
+    // later parts reuse the tags earlier parts just created
+    result.segments.forEach((s) => (s.tags || []).forEach((t) => { if (!topics.includes(t) && t !== "Unsorted") topics.push(t); }));
     if (result.tagline) tagline = result.tagline;
   }
   return { segments: allSegments, tagline };
@@ -819,7 +1000,7 @@ function dominantEmotionByDay(days) {
 function computeStreak(days, freeze = true) {
   return computeStreakInfo(days, freeze).streak;
 }
-function buildDigest(days, numDays = 7) {
+function buildDigest(days, numDays = 7, perEntry = 220, cap = 6000) {
   const keys = Object.keys(days).sort().slice(-numDays);
   let out = [];
   for (const k of keys) {
@@ -829,11 +1010,11 @@ function buildDigest(days, numDays = 7) {
         .filter((s) => !s.type || s.type === "text" || s.type === "qa")
         .map((s) => (s.type === "qa" ? s.q : s.text))
         .join(" | ")
-        .slice(0, 220);
+        .slice(0, perEntry);
       if (texts) out.push(`${k} · ${topics}: ${texts}`);
     }
   }
-  return out.join("\n").slice(0, 6000);
+  return out.join("\n").slice(0, cap);
 }
 function itemPlainText(item) {
   if (item.type === "qa") return `Q: ${item.q}\nA: ${item.a}`;
@@ -1322,7 +1503,7 @@ function haptic(type) {
   if (!H) return;
   try {
     if (type === "select") H.selectionStart().then(() => H.selectionEnd()).catch(() => {});
-    else H.impact({ style: type }).catch(() => {});
+    else H.impact({ style: String(type || "light").toUpperCase() }).catch(() => {});
   } catch (e) {}
 }
 
@@ -3706,10 +3887,58 @@ const jfDrop = (f, k) => {
 
 // ----- Today card -----
 const CHECKIN_MOODS = ["happy", "calm", "grateful", "hopeful", "tired", "anxious", "sad", "angry"];
-function TodayCard({ days, onCheckIn, onWrite, streakInfo, freezeOn }) {
+// ----- Today card: reorderable blocks -----
+const TODAY_BLOCK_NAMES = { mood: "Mood check-in", streak: "Streak and your year", onthisday: "On this day", gratitude: "Gratitude line", quote: "Daily line" };
+const TODAY_DEFAULT = [{ id: "mood", on: true }, { id: "streak", on: true }, { id: "onthisday", on: true }, { id: "gratitude", on: false }, { id: "quote", on: false }];
+function todayBlocksOf(saved) {
+  const out = [];
+  (Array.isArray(saved) ? saved : []).forEach((b) => { if (b && TODAY_BLOCK_NAMES[b.id] && !out.some((o) => o.id === b.id)) out.push({ id: b.id, on: b.on !== false }); });
+  TODAY_DEFAULT.forEach((d) => { if (!out.some((o) => o.id === d.id)) out.push({ ...d }); });
+  return out;
+}
+const DAILY_LINES = [
+  "You don't have to write well. You only have to write honestly.",
+  "Small days add up to a life. Write one down.",
+  "Whatever you're carrying, it weighs less on the page.",
+  "Notice one thing today that you'd normally walk past.",
+  "Not every entry needs a lesson. Some just need to exist.",
+  "Future you will be glad you wrote this down.",
+  "Feelings are information, not instructions.",
+  "Rest counts as progress too.",
+  "Say the true thing quietly, on paper, first.",
+  "You are allowed to be a work in progress and a good person at once.",
+  "Three honest sentences beat a perfect page you never write.",
+  "What you pay attention to grows. Choose gently.",
+  "Be as kind to yourself as you'd be to a friend in your spot.",
+  "Today doesn't have to be impressive to be worth remembering.",
+  "Clarity often arrives in the middle of a sentence.",
+  "Ask what you need, not what you should do.",
+  "Hard days make the best pages and the best stories later.",
+  "Progress is quieter than you think.",
+  "Write it now; understand it later.",
+  "A little attention each day changes how the year feels.",
+  "You've gotten through every hard day so far.",
+  "Let it be messy. You can sort it out tomorrow.",
+  "Gratitude is just noticing, out loud.",
+  "The page is the one place you never have to perform.",
+];
+const STREAK_STEPS = [7, 14, 30, 50, 100, 150, 200, 365, 500, 1000];
+function TodayCard({ days, onCheckIn, onWrite, streakInfo, freezeOn, blocks, onBlocks, onGratitude, onOpenDay, onOpenYear }) {
   const [done, setDone] = useState("");
+  const [thanks, setThanks] = useState("");
+  const [thanked, setThanked] = useState("");
+  const [edit, setEdit] = useState(false);
+  const [list, setListState] = useState(() => todayBlocksOf(blocks));
+  const listRef = useRef(list);
+  const sig = JSON.stringify(blocks || null);
+  useEffect(() => { const l = todayBlocksOf(blocks); listRef.current = l; setListState(l); }, [sig]);
+  // functional so two quick taps never overwrite each other
+  const setList = (fn) => { const next = fn(listRef.current); listRef.current = next; setListState(next); if (onBlocks) onBlocks(next); };
+  const move = (i, d) => setList((l) => { const j = i + d; if (j < 0 || j >= l.length) return l; const n = l.slice(); [n[i], n[j]] = [n[j], n[i]]; return n; });
+  const toggle = (id) => setList((l) => l.map((b) => (b.id === id ? { ...b, on: !b.on } : b)));
   const timer = useRef(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const timer2 = useRef(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); if (timer2.current) clearTimeout(timer2.current); }, []);
   const now = new Date();
   const hr = now.getHours();
   const greet = hr < 5 ? "Still up?" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening";
@@ -3721,11 +3950,73 @@ function TodayCard({ days, onCheckIn, onWrite, streakInfo, freezeOn }) {
     week.push({ k, lbl: d.toLocaleDateString([], { weekday: "narrow" }), has: !!days[k], today: i === 0, emo: dom[k] });
   }
   const wrote = !!days[dayKey()];
+  const memory = React.useMemo(() => memoriesFor(days)[0] || null, [days]);
+  const doy = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  const st = streakInfo ? streakInfo.streak : 0;
+  const nxt = STREAK_STEPS.find((s) => s > st) || null;
+  const prevStep = STREAK_STEPS.filter((s) => s <= st).pop() || 0;
   const tap = (m) => {
     onCheckIn(m);
     setDone(emotionOf(m).label);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setDone(""), 2200);
+  };
+  const submitThanks = (e) => {
+    e.preventDefault();
+    const t = thanks.trim();
+    if (!t) { setThanked("Write a few words first."); }
+    else { onGratitude(t); setThanks(""); setThanked("Saved to today."); }
+    if (timer2.current) clearTimeout(timer2.current);
+    timer2.current = setTimeout(() => setThanked(""), 2400);
+  };
+  const block = (id) => {
+    if (id === "mood") return (
+      <div className="lx-checkin" key={id}>
+        <span className="lx-q">{done ? "Logged: " + done : "How are you feeling right now?"}</span>
+        <div className="lx-moods" role="group" aria-label="Quick mood check-in">
+          {CHECKIN_MOODS.map((m) => {
+            const e = emotionOf(m);
+            return (
+              <button key={m} className="lx-mood" onClick={() => tap(m)} style={{ "--mc": e.dot }}>
+                <i />{e.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+    if (id === "streak") return (
+      <div className="lx-streakrow" key={id}>
+        <div className="lx-streaknum"><b>{st}</b><span>day streak</span></div>
+        <div className="lx-streakmid">
+          {st > 0 && nxt ? (
+            <>
+              <div className="lx-bar" role="img" aria-label={(nxt - st) + " days to your " + nxt + "-day mark"}><i style={{ width: Math.max(6, Math.round(((st - prevStep) / (nxt - prevStep)) * 100)) + "%" }} /></div>
+              <small>{nxt - st} day{nxt - st === 1 ? "" : "s"} to {nxt}</small>
+            </>
+          ) : <small>{st > 0 ? "You're past every mark. Keep going." : "Write today to start a streak."}</small>}
+        </div>
+        <button className="lx-yearbtn" onClick={onOpenYear}>Your year</button>
+      </div>
+    );
+    if (id === "onthisday") return memory ? (
+      <button className="lx-otd" key={id} onClick={() => onOpenDay(memory.k)}>
+        <span className="lx-otdlbl"><i style={{ background: emotionOf(memory.emotion).dot }} />On this day · {memory.label}</span>
+        <span className="lx-otdtxt">“{memory.text}”</span>
+      </button>
+    ) : null;
+    if (id === "gratitude") return (
+      <form className="lx-grat" key={id} onSubmit={submitThanks}>
+        <label className="lx-q" htmlFor="lx-grat-in">What's one thing you're grateful for today?</label>
+        <div className="lx-gratrow">
+          <input id="lx-grat-in" value={thanks} maxLength={200} onChange={(e) => setThanks(e.target.value)} placeholder="The first coffee, a text from a friend…" />
+          <button type="submit">Add</button>
+        </div>
+        {thanked && <small className="lx-gratmsg" role="status">{thanked}</small>}
+      </form>
+    );
+    if (id === "quote") return <p className="lx-quote" key={id}>{DAILY_LINES[doy % DAILY_LINES.length]}</p>;
+    return null;
   };
   return (
     <section className="lx-today" aria-label="Today">
@@ -3746,22 +4037,149 @@ function TodayCard({ days, onCheckIn, onWrite, streakInfo, freezeOn }) {
       {freezeOn && streakInfo && streakInfo.frozen > 0 && (
         <div className="lx-freeze">❄ A streak freeze covered a missed day, so your {streakInfo.streak}-day streak is safe.</div>
       )}
-      <div className="lx-checkin">
-        <span className="lx-q">{done ? "Logged: " + done : "How are you feeling right now?"}</span>
-        <div className="lx-moods" role="group" aria-label="Quick mood check-in">
-          {CHECKIN_MOODS.map((m) => {
-            const e = emotionOf(m);
-            return (
-              <button key={m} className="lx-mood" onClick={() => tap(m)} style={{ "--mc": e.dot }}>
-                <i />{e.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {list.filter((b) => b.on).map((b) => block(b.id))}
       <button className="lx-write" onClick={onWrite}>{wrote ? "Add to today" : "Write today's entry"}</button>
+      <div className="lx-editrow"><button className="lx-cardedit" onClick={() => setEdit((v) => !v)} aria-expanded={edit}>{edit ? "Done editing" : "Edit this card"}</button></div>
+      {edit && (
+        <div className="lx-editblocks">
+          <p className="lx-hint" style={{ margin: "0 0 8px" }}>Choose what shows here and in what order.</p>
+          {list.map((b, i) => (
+            <div className="lx-eb" key={b.id}>
+              <span>{TODAY_BLOCK_NAMES[b.id]}</span>
+              <button className="lx-ebmv" aria-label={"Move " + TODAY_BLOCK_NAMES[b.id] + " up"} onClick={() => move(i, -1)}>↑</button>
+              <button className="lx-ebmv" aria-label={"Move " + TODAY_BLOCK_NAMES[b.id] + " down"} onClick={() => move(i, 1)}>↓</button>
+              <button className={b.on ? "lx-ebon on" : "lx-ebon"} aria-pressed={b.on} onClick={() => toggle(b.id)}>{b.on ? "On" : "Off"}</button>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
+}
+
+// ----- your year: one tile per day, coloured by that day's mood -----
+function YearMap({ days, onClose, onOpenDay }) {
+  const thisY = new Date().getFullYear();
+  const ys = new Set(Object.keys(days).map((k) => parseInt(k.slice(0, 4), 10)).filter(Boolean));
+  ys.add(thisY);
+  const years = [...ys].sort((a, b) => a - b);
+  const [yr, setYr] = useState(thisY);
+  const [sel, setSel] = useState("");
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  const dom = React.useMemo(() => dominantEmotionByDay(days), [days]);
+  const todayK = dayKey();
+  const pad = (n) => String(n).padStart(2, "0");
+  const tally = {};
+  let written = 0, best = 0, run = 0;
+  const months = [];
+  for (let m = 0; m < 12; m++) {
+    const dim = new Date(yr, m + 1, 0).getDate();
+    const cells = [];
+    let v = 0, n = 0;
+    for (let d = 1; d <= dim; d++) {
+      const k = yr + "-" + pad(m + 1) + "-" + pad(d);
+      const has = !!days[k];
+      const emo = has ? dom[k] : null;
+      if (has) {
+        written++; run++; if (run > best) best = run;
+        if (emo) { tally[emo] = (tally[emo] || 0) + 1; if (emo in VALENCE) { v += VALENCE[emo]; n++; } }
+      } else run = 0;
+      cells.push({ k, has, emo, future: k > todayK });
+    }
+    months.push({ m, cells, avg: n >= 3 ? v / n : null });
+  }
+  const moods = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+  const brightest = months.filter((x) => x.avg !== null).sort((a, b) => b.avg - a.avg)[0];
+  const monthName = (m) => new Date(2000, m, 1).toLocaleDateString([], { month: "short" });
+  const selMem = sel ? memoryOf(days[sel]) : null;
+  const selEmo = sel && dom[sel] ? emotionOf(dom[sel]) : null;
+  return (
+    <div className="lx-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="lx-sheet" role="dialog" aria-modal="true" aria-label={"Your " + yr + " in moods"}>
+        <div className="lx-sheethead">
+          <button className="lx-x" aria-label="Previous year" onClick={() => { setSel(""); setYr((y) => Math.max(years[0], y - 1)); }}>‹</button>
+          <b style={{ textAlign: "center" }}>{yr}</b>
+          <button className="lx-x" aria-label="Next year" onClick={() => { setSel(""); setYr((y) => Math.min(years[years.length - 1], y + 1)); }}>›</button>
+          <button className="lx-x" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="lx-sheetbody">
+          {written === 0 ? <p className="lx-hint">Nothing written in {yr} yet.</p> : (
+            <div className="lx-ystats">
+              <div><b>{written}</b><span>days written</span></div>
+              <div><b>{best}</b><span>longest run</span></div>
+              <div><b style={moods[0] ? { color: emotionOf(moods[0][0]).dot } : undefined}>{moods[0] ? emotionOf(moods[0][0]).label : "—"}</b><span>top mood</span></div>
+              <div><b>{brightest ? monthName(brightest.m) : "—"}</b><span>brightest month</span></div>
+            </div>
+          )}
+          <div className="lx-ygrid">
+            {months.map((mo) => (
+              <div className="lx-yrow" key={mo.m}>
+                <span className="lx-ymo">{monthName(mo.m)}</span>
+                <div className="lx-ycells">
+                  {mo.cells.map((c) => c.has ? (
+                    <button key={c.k} className={"lx-ycell on" + (c.k === todayK ? " today" : "") + (c.k === sel ? " sel" : "")}
+                      style={{ background: c.emo ? emotionOf(c.emo).dot : "var(--accent)" }}
+                      aria-label={prettyDate(c.k) + (c.emo ? ", " + emotionOf(c.emo).label : "")} onClick={() => setSel(c.k)} />
+                  ) : <i key={c.k} className={"lx-ycell" + (c.future ? " future" : "") + (c.k === todayK ? " today" : "")} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+          {moods.length > 0 && (
+            <div className="lx-yleg">
+              {moods.slice(0, 8).map(([e, n]) => <span key={e}><i style={{ background: emotionOf(e).dot }} />{emotionOf(e).label} · {n}</span>)}
+            </div>
+          )}
+          {sel ? (
+            <div className="lx-ysel">
+              <div className="lx-ysel-top"><b>{prettyDate(sel)}</b>{selEmo && <span style={{ color: selEmo.dot }}>{selEmo.label}</span>}</div>
+              {selMem && <p>“{selMem.text}”</p>}
+              <button className="lx-primary" onClick={() => onOpenDay(sel)}>Open this day</button>
+            </div>
+          ) : written > 0 && <p className="lx-hint">Tap a tile to peek at that day.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----- confetti for the streak milestone card -----
+const CONF_COLORS = ["#3ddc97", "#5aa9ff", "#ffb454", "#ff6b6b", "#9a8cff", "#ff7ea8"];
+function Confetti() {
+  const bits = React.useMemo(() => Array.from({ length: 30 }, (_, i) => ({ l: Math.round(Math.random() * 100), d: Math.round(Math.random() * 700) / 1000, t: 2400 + Math.round(Math.random() * 1600), c: CONF_COLORS[i % CONF_COLORS.length], r: Math.round(Math.random() * 360), w: 6 + Math.round(Math.random() * 6) })), []);
+  return (
+    <div className="lx-confetti" aria-hidden="true">
+      {bits.map((b, i) => <i key={i} style={{ left: b.l + "%", width: b.w, height: b.w * 1.6, background: b.c, animationDelay: b.d + "s", animationDuration: b.t + "ms", transform: "rotate(" + b.r + "deg)" }} />)}
+    </div>
+  );
+}
+
+// ----- day cover photo + entry fonts -----
+const ENTRY_FONTS = {
+  sans: "var(--bodyfont)",
+  serif: "Georgia, 'Times New Roman', serif",
+  hand: "'Caveat', 'Segoe Print', 'Bradley Hand', cursive",
+  type: "'American Typewriter', 'Courier New', Courier, monospace",
+};
+function CoverImage({ imgKey }) {
+  const [src, setSrc] = useState(imgCache[imgKey] || null);
+  useEffect(() => {
+    if (src) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await window.storage.get(imgKey);
+        if (alive && res && res.value) { imgCache[imgKey] = res.value; setSrc(res.value); }
+      } catch (e) { }
+    })();
+    return () => { alive = false; };
+  }, [imgKey]);
+  if (!src) return null;
+  return <div className="lx-cover"><img src={src} alt="" /></div>;
 }
 
 // ----- search everything: journal + notes in one place -----
@@ -4017,6 +4435,77 @@ const LX_CSS = `
   .lx-select { background: var(--inputbg); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; min-height: 38px; color: var(--body); font: 14px var(--bodyfont); }
   body.lx-overlay-open .xo-tabbar { display: none !important; }
   .lx-bio { width: 100%; margin-top: 10px; background: transparent; border: 1px solid var(--dash); color: var(--body); border-radius: 99px; padding: 11px; font: 500 14px 'Inter', sans-serif; cursor: pointer; }
+  /* Today blocks */
+  .lx-streakrow { margin-top: 14px; display: flex; align-items: center; gap: 12px; }
+  .lx-streaknum { display: flex; align-items: baseline; gap: 6px; flex: none; }
+  .lx-streaknum b { font: 700 28px/1 var(--disp); color: var(--accent); }
+  .lx-streaknum span { font-size: 12px; color: var(--faint); }
+  .lx-streakmid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .lx-streakmid small { font-size: 12px; color: var(--faint); }
+  .lx-bar { height: 6px; border-radius: 99px; background: rgba(var(--strong-rgb), .1); overflow: hidden; }
+  .lx-bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .4s ease; }
+  .lx-yearbtn { flex: none; background: transparent; border: 1px solid var(--dash); color: var(--body); font: 500 12.5px var(--bodyfont); padding: 7px 12px; border-radius: 99px; cursor: pointer; min-height: 34px; }
+  .lx-yearbtn:hover { color: var(--ink); border-color: var(--faint); }
+  .lx-otd { display: block; width: 100%; margin-top: 14px; text-align: left; background: var(--inputbg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; color: var(--body); }
+  .lx-otdlbl { display: flex; align-items: center; gap: 6px; font: 600 10.5px var(--bodyfont); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .lx-otdlbl i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+  .lx-otdtxt { display: block; margin-top: 6px; font-size: 13.5px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+  .lx-grat { margin-top: 14px; }
+  .lx-gratrow { display: flex; gap: 8px; }
+  .lx-gratrow input { flex: 1; min-width: 0; background: var(--inputbg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; color: var(--ink); font: 16px var(--bodyfont); outline: none; }
+  .lx-gratrow input:focus { border-color: rgba(var(--accent-rgb), .6); }
+  .lx-gratrow button { flex: none; background: var(--accent); border: 1px solid var(--accent); color: var(--btn-text, #0a0b0e); font: 600 13px var(--bodyfont); padding: 0 16px; border-radius: 99px; cursor: pointer; min-height: 40px; }
+  .lx-gratmsg { display: block; margin-top: 6px; font-size: 12.5px; color: var(--accent); }
+  .lx-quote { margin: 14px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--body); font-style: italic; border-left: 2px solid rgba(var(--accent-rgb), .5); padding-left: 12px; border-radius: 0; }
+  .lx-editrow { display: flex; justify-content: center; margin-top: 4px; }
+  .lx-cardedit { background: none; border: none; color: var(--faint); font: 500 12.5px var(--bodyfont); cursor: pointer; padding: 8px; min-height: 34px; }
+  .lx-cardedit:hover { color: var(--accent); }
+  .lx-editblocks { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .lx-eb { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+  .lx-eb span { flex: 1; min-width: 0; font-size: 13.5px; color: var(--ink); }
+  .lx-ebmv, .lx-ebon { background: none; border: 1px solid var(--line); color: var(--body); border-radius: 8px; font: 500 12.5px var(--bodyfont); cursor: pointer; min-width: 34px; min-height: 34px; padding: 0 8px; }
+  .lx-ebon.on { color: var(--accent); border-color: rgba(var(--accent-rgb), .5); background: var(--soft); }
+  /* year map */
+  .lx-ystats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 14px; }
+  .lx-ystats div { background: var(--inputbg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; text-align: center; }
+  .lx-ystats b { display: block; font: 600 16px var(--disp); color: var(--ink); }
+  .lx-ystats span { font-size: 10.5px; color: var(--faint); }
+  .lx-ygrid { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+  .lx-yrow { display: flex; align-items: center; gap: 6px; }
+  .lx-ymo { width: 28px; flex: none; font: 600 10px var(--bodyfont); color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
+  .lx-ycells { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(31, minmax(0, 1fr)); gap: 2px; }
+  .lx-ycell { display: block; aspect-ratio: 1; border-radius: 2px; padding: 0; border: none; background: rgba(var(--strong-rgb), .07); box-sizing: border-box; }
+  .lx-ycell.future { background: transparent; border: 1px dashed rgba(var(--strong-rgb), .12); }
+  button.lx-ycell { cursor: pointer; }
+  .lx-ycell.today { outline: 1.5px solid var(--ink); outline-offset: 1px; }
+  .lx-ycell.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .lx-yleg { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 14px; font-size: 12px; color: var(--body); }
+  .lx-yleg span { display: inline-flex; align-items: center; gap: 5px; }
+  .lx-yleg i { width: 9px; height: 9px; border-radius: 2px; display: block; }
+  .lx-ysel { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .lx-ysel-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; }
+  .lx-ysel-top b { color: var(--ink); font-weight: 600; }
+  .lx-ysel p { margin: 8px 0 12px; font-size: 13.5px; line-height: 1.5; color: var(--body); overflow-wrap: anywhere; }
+  /* streak celebration */
+  .lx-confetti { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 9101; }
+  .lx-confetti i { position: absolute; top: -20px; border-radius: 2px; animation: lxfall linear forwards; }
+  @keyframes lxfall { to { transform: translateY(105vh) rotate(540deg); opacity: .9; } }
+  /* cover photos, fonts, paper */
+  .lx-cover { height: 120px; overflow: hidden; position: relative; }
+  .lx-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lx-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 40%, var(--card)); }
+  .xo-root.ef-on .xo-hl, .xo-root.ef-on .xo-composer textarea, .xo-root.ef-on .xo-qa, .xo-root.ef-on .xo-recap, .xo-root.ef-on .xo-editbox textarea { font-family: var(--entryfont); }
+  .xo-root.ef-hand .xo-hl, .xo-root.ef-hand .xo-qa { font-size: 1.2em; line-height: 1.35; }
+  .xo-root.ef-hand .xo-composer textarea { font-size: 18px; }
+  .xo-root.ef-type .xo-hl, .xo-root.ef-type .xo-qa { font-size: .93em; }
+  .xo-root.ep-lined .xo-seg { border-bottom: 1px solid rgba(var(--strong-rgb), .1); padding-bottom: 4px; }
+  .xo-root.ep-lined .xo-composer textarea { background-image: linear-gradient(to bottom, transparent 25px, rgba(var(--strong-rgb), .12) 25px); background-size: 100% 26px; background-attachment: local; line-height: 26px; }
+  .xo-root.ep-dots .xo-section { background-image: radial-gradient(circle, rgba(var(--strong-rgb), .16) 1px, transparent 1.6px); background-size: 20px 20px; border-radius: 10px; }
+  .xo-root.ep-dots .xo-composer textarea { background-image: radial-gradient(circle, rgba(var(--strong-rgb), .18) 1px, transparent 1.6px); background-size: 20px 20px; background-attachment: local; }
+  .lx-fontprev { margin: 10px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background-color: var(--inputbg); font-size: 15px; line-height: 26px; color: var(--ink); }
+  .lx-fontprev.p-lined { background-image: linear-gradient(to bottom, transparent 25px, rgba(var(--strong-rgb), .12) 25px); background-size: 100% 26px; }
+  .lx-fontprev.p-dots { background-image: radial-gradient(circle, rgba(var(--strong-rgb), .18) 1px, transparent 1.6px); background-size: 20px 20px; }
+  @media (prefers-reduced-motion: reduce) { .lx-confetti { display: none; } .lx-bar i { transition: none; } }
   /* motion */
   @keyframes lxfade { from { opacity: 0; } }
   @keyframes lxrise { from { opacity: 0; transform: translateY(10px); } }
@@ -4137,6 +4626,7 @@ function XOJournal() {
   const [sugBusy, setSugBusy] = useState(false);
   // ----- extras: search, journal filters, offline voice, Face ID, year book -----
   const [showSearch, setShowSearch] = useState(false);
+  const [showYear, setShowYear] = useState(false);
   const [npOpenId, setNpOpenId] = useState(null);
   // long journals: draw the newest days first and load older ones on request (keeps typing snappy)
   const DAY_PAGE = 30;
@@ -4167,9 +4657,9 @@ function XOJournal() {
     el.classList.remove("lx-vin"); void el.offsetWidth; el.classList.add("lx-vin"); // gentle fade/rise on tab change
   }, [view]);
   useEffect(() => {
-    document.body.classList.toggle("lx-overlay-open", showSearch || showJF);
+    document.body.classList.toggle("lx-overlay-open", showSearch || showJF || showYear);
     return () => document.body.classList.remove("lx-overlay-open");
-  }, [showSearch, showJF]);
+  }, [showSearch, showJF, showYear]);
   useEffect(() => { bioAvailable().then(setBioAvail); }, []);
   useEffect(() => { if (!voiceInfo) return; const t = setTimeout(() => setVoiceInfo(""), 8000); return () => clearTimeout(t); }, [voiceInfo]);
   const textareaRef = useRef(null);
@@ -4446,8 +4936,10 @@ function XOJournal() {
       const daysAway = Math.max(1, Math.round((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000));
       awayText = daysAway <= 1 ? "since yesterday" : `for ${daysAway} days`;
     }
-    const digest = buildDigest(days, 5);
+    const digest = buildDigest(days, 10, 420, 7000);
     const tone = recentTone(days);
+    const pctx = buildPromptContext(days);
+    const recentP = promptHistory().slice(-8);
 
     // Follow up on things THEY chose to put in the app — goals + calendar.
     // Only their own words/plans, never inferred behaviour.
@@ -4478,11 +4970,16 @@ TONE: ${tone}
 
 Write them a short note (2-3 sentences, 30-70 words total) that shows you were genuinely thinking about what they wrote: reference one or two SPECIFIC things they actually wrote about (name the real thing — the trade, the person, the memory — and use their own words where you can, not just a topic label), pick up a thread they left open if there is one, and then ${PROMPT_ANGLES[angleIdx]}. Ask only ONE question, specific to them — never generic. Only ever reference things they actually wrote or planned; never guess at feelings they didn't express or point out patterns like a data report. Speak directly to them. No markdown, no emoji, no quotes, no greeting like "hey" or "welcome back".
 ${ctxBits.length ? "\nThings they've told the app (safe to reference):\n" + ctxBits.join("\n") + "\n" : ""}${focus ? "\n" + focus + "\n" : ""}
-Their recent entries:
+${pctx ? "\nBackground on right now and their recent patterns (use at most ONE piece, and only if it fits naturally; never recite it like a report):\n" + pctx + "\n" : ""}${recentP.length ? "\nYou already showed them these recently — do not repeat or echo them:\n- " + recentP.join("\n- ") + "\n" : ""}
+Before answering, double-check that every person, place, plan, or event you mention actually appears in their entries or the notes above, and that your question could only have been written for THIS person.
+
+Their recent entries (about the last 10 days, oldest first):
 """${digest}"""
 
 Their overall profile: ${vibe.text}`, 400);
-        setWelcome(q.trim());
+        const note = cleanPrompt(q);
+        rememberPrompt(note);
+        setWelcome(note);
       } catch (err) {
         const idx = new Date().getDate() % STARTER_PROMPTS.length;
         setWelcome(STARTER_PROMPTS[idx]);
@@ -4799,6 +5296,28 @@ Their week:
     });
   };
 
+  // ----- day cover photo (tap ▣ on a photo): stored on the day, shown above its card -----
+  const setCover = (key, imgKey) => {
+    setDays((prev) => {
+      const cur = prev[key];
+      if (!cur) return prev;
+      const next = { ...prev, [key]: { ...cur, cover: cur.cover === imgKey ? undefined : imgKey } };
+      saveJSON(STORAGE_KEY, next);
+      return next;
+    });
+  };
+  // ----- Today card: one-line gratitude (no AI) and jump-to-day -----
+  const doGratitude = (text) => {
+    const time = nowTime();
+    pushEntry(dayKey(), { id: uid(), time, segments: [{ id: uid(), type: "text", text: "Grateful for: " + text, tags: ["Gratitude"], topic: "Gratitude", emotion: "grateful", time }] });
+    haptic("Light");
+  };
+  const openDay = (k) => {
+    setShowYear(false); setView("journal"); setTopicFilter(""); setFavFilter(false); setQuery("");
+    setJf({ ...JF_DEFAULT, from: k, to: k });
+    window.scrollTo(0, 0);
+  };
+
   // ----- add journal entry -----
   const addEntry = async () => {
     const text = draft.trim();
@@ -4820,10 +5339,10 @@ Their week:
         eachSegment(days, (k2, en, sg) => {
           for (const t of segTags(sg)) existingTopics[t] = (existingTopics[t] || 0) + 1;
         });
-        const topicList = Object.entries(existingTopics).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([t]) => t);
+        const topicList = Object.entries(existingTopics).filter(([t]) => !SKIP_TAGS.has(t)).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([t]) => t);
         let segments = [], tagline = "";
         try {
-          const result = await classifyLongEntry(text, vibe.text, topicList);
+          const result = await classifyLongEntry(text, vibe.text, topicList, buildClassifyContext(days));
           segments = result.segments; tagline = result.tagline;
         } catch (aiErr) {
           // AI switched off by the user: save quietly, untagged — not an error.
@@ -5299,6 +5818,7 @@ Digest:
     if (s > last) {
       setCelebrate({ n: s });
       haptic("Medium");
+      setTimeout(() => haptic("Medium"), 180);
       try { localStorage.setItem(key, String(s)); } catch (e) { }
     }
   }, [loaded, days]);
@@ -5588,6 +6108,8 @@ Digest:
     calCells.push({ key: k, emotion: domEmotions[k] || null });
   }
   const streakInfo = computeStreakInfo(days, settings.streakFreeze !== false);
+  const entryFont = ["serif", "hand", "type"].includes(settings.entryFont) ? settings.entryFont : "sans";
+  const entryPaper = ["lined", "dots"].includes(settings.entryPaper) ? settings.entryPaper : "none";
   const streak = streakInfo.streak;
 
   let totalNotes = 0;
@@ -5761,8 +6283,9 @@ Digest:
 
   return (
     <div
-      className={"xo-root sk-" + pack + " m-" + (settings.theme || "")}
+      className={"xo-root sk-" + pack + " m-" + (settings.theme || "") + (entryFont !== "sans" ? " ef-on ef-" + entryFont : "") + (entryPaper !== "none" ? " ep-" + entryPaper : "")}
       style={{
+        "--entryfont": ENTRY_FONTS[entryFont],
         "--accent": theme.accent,
         "--accent-rgb": theme.rgb,
         "--accent-dark": theme.dark,
@@ -6704,6 +7227,7 @@ Digest:
       `}</style>
 
       <style>{LX_CSS}</style>
+      {showYear && <YearMap days={days} onClose={() => setShowYear(false)} onOpenDay={openDay} />}
       {showSearch && (
         <GlobalSearch days={days} onClose={() => setShowSearch(false)}
           onOpenDay={(k, text) => { setShowSearch(false); setView("journal"); setTopicFilter(""); setFavFilter(false); setJf({ ...JF_DEFAULT }); setQuery(text); window.scrollTo(0, 0); }}
@@ -6759,6 +7283,7 @@ Digest:
 
         {celebrate && (
           <div className="xo-celebrate" onClick={() => setCelebrate(null)}>
+            <Confetti />
             <div className="xo-celebrate-card" onClick={(e) => e.stopPropagation()}>
               <span className="ring r1" /><span className="ring r2" /><span className="ring r3" />
               <div className="xo-cel-num">{celebrate.n}</div>
@@ -6846,6 +7371,36 @@ Digest:
               <style>{AC_CSS}</style>
               <div style={{ marginTop: 8 }}><AIDisclosure /></div>
             </details>
+
+            <label style={{ marginTop: 14 }}>Writing style</label>
+            <div className="xo-topicchips" style={{ marginBottom: 8 }}>
+              {[["sans", "Clean"], ["serif", "Serif"], ["hand", "Handwriting"], ["type", "Typewriter"]].map(([v, l]) => (
+                <button key={v} className={entryFont === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => updateSettings({ entryFont: v })}>{l}</button>
+              ))}
+            </div>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }} role="group" aria-label="Paper">
+              {[["none", "Plain"], ["lined", "Lined"], ["dots", "Dotted"]].map(([v, l]) => (
+                <button key={v} className={entryPaper === v ? "xo-topicchip on" : "xo-topicchip"} onClick={() => updateSettings({ entryPaper: v })}>{l}</button>
+              ))}
+            </div>
+            <div className={"lx-fontprev p-" + entryPaper} style={{ fontFamily: ENTRY_FONTS[entryFont] }}>The quick brown fox kept a journal. Today it wrote about the walk home.</div>
+            <p className="xo-note" style={{ marginTop: 8 }}>Changes how your journal entries look and how you write them. Notepad keeps its own font and paper.</p>
+
+            <label style={{ marginTop: 14 }}>Cover photos</label>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+              {[[true, "On"], [false, "Off"]].map(([v, l]) => (
+                <button key={String(v)} className={(settings.covers !== false) === v ? "xo-topicchip on" : "xo-topicchip"}
+                  onClick={() => updateSettings({ covers: v })}>{l}</button>
+              ))}
+            </div>
+            <p className="xo-note" style={{ marginTop: 8 }}>
+              Tap ▣ on any photo in your journal to make it that day's cover. Tap it again to remove it.
+            </p>
+
+            <label style={{ marginTop: 14 }}>Today card</label>
+            <p className="xo-note" style={{ marginTop: 4 }}>
+              Choose and reorder its blocks (mood, streak, on this day, gratitude, daily line) with "Edit this card" at the bottom of the Today card.
+            </p>
 
             <label style={{ marginTop: 14 }}>Streak freeze</label>
             <div className="xo-topicchips" style={{ marginBottom: 0 }}>
@@ -7190,6 +7745,7 @@ Digest:
                 <h3>Year in pixels — {new Date().getFullYear()}</h3>
                 <YearPixels domEmotions={domEmotions} />
                 <p className="xo-note" style={{ marginTop: 8 }}>One square per day, colored by that day's dominant mood.</p>
+                <button className="lx-yearbtn" style={{ marginTop: 8 }} onClick={() => setShowYear(true)}>Open your year: stats, past years, tap any day</button>
               </div>
               </div>
               <div className="xo-side">
@@ -7452,7 +8008,8 @@ Digest:
         {view === "journal" && (
           <>
             {loaded && (
-              <TodayCard days={days} streakInfo={streakInfo} freezeOn={settings.streakFreeze !== false} onCheckIn={doCheckIn} onWrite={focusComposer} />
+              <TodayCard days={days} streakInfo={streakInfo} freezeOn={settings.streakFreeze !== false} onCheckIn={doCheckIn} onWrite={focusComposer}
+                blocks={settings.todayBlocks} onBlocks={(b) => updateSettings({ todayBlocks: b })} onGratitude={doGratitude} onOpenDay={openDay} onOpenYear={() => setShowYear(true)} />
             )}
             {hasEntries && (
               <div className="xo-kpis">
@@ -7648,6 +8205,7 @@ Digest:
               return (
               <section className={open ? "xo-daycard open" : "xo-daycard"} key={k}
                 style={de ? { boxShadow: "inset 3px 0 0 " + de.dot, backgroundImage: "linear-gradient(90deg, " + de.bg + ", transparent 38%)" } : undefined}>
+                {settings.covers !== false && days[k] && days[k].cover && (days[k].entries || []).some((en) => (en.segments || []).some((s) => s.imgKey === days[k].cover)) && <CoverImage key={days[k].cover} imgKey={days[k].cover} />}
                 <div className="xo-dayhead" onClick={() => setDayCollapsed((prev) => ({ ...prev, [k]: open }))}>
                   <span className="xo-chev">▶</span>
                   <h2>{prettyDate(k)}</h2>
@@ -7730,6 +8288,12 @@ Digest:
                                   >{seg.fav ? "★" : "☆"}</button>
                                   {(!seg.type || seg.type === "text") && (
                                     <button className="xo-act" title="Edit" aria-label="Edit" onClick={() => startEdit(seg)}>✎</button>
+                                  )}
+                                  {seg.type === "image" && (
+                                    <button className={days[k] && days[k].cover === seg.imgKey ? "xo-act star on" : "xo-act star"}
+                                      title={days[k] && days[k].cover === seg.imgKey ? "Remove as day cover" : "Use as day cover"}
+                                      aria-label={days[k] && days[k].cover === seg.imgKey ? "Remove as day cover" : "Use as day cover"}
+                                      onClick={() => setCover(k, seg.imgKey)}>▣</button>
                                   )}
                                   <button className="xo-act del" title="Delete" aria-label="Delete" onClick={() => deleteItem(k, entry.id, seg.id)}>×</button>
                                 </span>
