@@ -3961,6 +3961,9 @@ const LX_CSS = `
     font: 600 14px var(--bodyfont); padding: 12px; border-radius: 99px; cursor: pointer; transition: transform .12s, filter .15s; }
   .lx-write:hover { filter: brightness(1.06); } .lx-write:active { transform: scale(.985); }
   .xo-promptcard > b { padding-right: 78px; }
+  .lx-more { display: flex; justify-content: center; margin: 4px 0 18px; }
+  .lx-more button { background: transparent; border: 1px solid var(--dash); color: var(--body); font: 500 13px var(--bodyfont); padding: 10px 20px; border-radius: 99px; cursor: pointer; min-height: 40px; }
+  .lx-more button:hover { color: var(--ink); border-color: var(--faint); }
   .lx-info { font-size: 12.5px; color: var(--accent); margin: 8px 0 0; line-height: 1.45; }
   /* overlays */
   .lx-veil { position: fixed; inset: 0; z-index: 9100; background: rgba(5,6,8,.72); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
@@ -4135,6 +4138,9 @@ function XOJournal() {
   // ----- extras: search, journal filters, offline voice, Face ID, year book -----
   const [showSearch, setShowSearch] = useState(false);
   const [npOpenId, setNpOpenId] = useState(null);
+  // long journals: draw the newest days first and load older ones on request (keeps typing snappy)
+  const DAY_PAGE = 30;
+  const [dayLimit, setDayLimit] = useState(DAY_PAGE);
   const [jf, setJfState] = useState(() => {
     try { const f = JSON.parse(localStorage.getItem(JF_LS) || "null"); if (f && typeof f === "object") return { ...JF_DEFAULT, ...f }; } catch (e) { }
     return { ...JF_DEFAULT };
@@ -7631,7 +7637,7 @@ Digest:
               <div className="xo-empty">Nothing matches that search.</div>
             )}
 
-            {loaded && filteredDays.map(({ key: k, entries }, di) => {
+            {loaded && filteredDays.slice(0, dayLimit).map(({ key: k, entries }, di) => {
               const noteCount = entries.reduce((n, en) => n + en.segments.length, 0);
               const filtering = !!(q || topicFilter || favFilter || jfOn);
               const open = filtering || (dayCollapsed[k] !== undefined ? !dayCollapsed[k] : di === 0);
@@ -7740,6 +7746,13 @@ Digest:
               </section>
               );
             })}
+            {loaded && filteredDays.length > dayLimit && (
+              <div className="lx-more">
+                <button onClick={() => setDayLimit((n) => n + DAY_PAGE * 2)}>
+                  Show older entries ({Math.min(DAY_PAGE * 2, filteredDays.length - dayLimit)} of {filteredDays.length - dayLimit} more days)
+                </button>
+              </div>
+            )}
 
             {loaded && hasEntries && (
               <div className="xo-footer">
