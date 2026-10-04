@@ -64,7 +64,9 @@ workflows:
           plutil -replace NSCameraUsageDescription -string "Lucid uses the camera so you can add a photo to a journal entry." "$PLIST"
           plutil -replace NSPhotoLibraryUsageDescription -string "Lucid opens your photo library so you can add photos to journal entries." "$PLIST"
           plutil -replace NSPhotoLibraryAddUsageDescription -string "Lucid can save your shared journal cards to your photo library." "$PLIST"
-          echo "Info.plist permissions:"; plutil -p "$PLIST" | grep -E "Usage|CFBundleVersion|ShortVersion|Encryption"
+          # optional Face ID unlock (the PIN remains the fallback)
+          plutil -replace NSFaceIDUsageDescription -string "Lucid uses Face ID so you can unlock your journal without typing your PIN." "$PLIST"
+          echo "Info.plist permissions:"; plutil -p "$PLIST" | grep -E "Usage|CFBundleVersion|ShortVersion|Encryption|FaceID"
       - name: Set the app icon (Lucid balloons)
         script: |
           set -e

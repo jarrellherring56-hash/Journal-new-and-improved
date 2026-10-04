@@ -231,7 +231,7 @@ function pickRewind(days) {
     if (k === today) continue;
     for (const en of days[k].entries || []) {
       for (const s of en.segments || []) {
-        if (!s.type || s.type === "text" || s.type === "qa") pool.push({ day: k, seg: s });
+        if ((!s.type || s.type === "text" || s.type === "qa") && s.topic !== "Check-in") pool.push({ day: k, seg: s });
       }
     }
   }
@@ -816,15 +816,8 @@ function dominantEmotionByDay(days) {
   }
   return out;
 }
-function computeStreak(days) {
-  let streak = 0;
-  const d = new Date();
-  if (!days[dayKey(d)]) d.setDate(d.getDate() - 1); // today not written yet doesn't break it
-  while (days[dayKey(d)]) {
-    streak++;
-    d.setDate(d.getDate() - 1);
-  }
-  return streak;
+function computeStreak(days, freeze = true) {
+  return computeStreakInfo(days, freeze).streak;
 }
 function buildDigest(days, numDays = 7) {
   const keys = Object.keys(days).sort().slice(-numDays);
@@ -915,7 +908,7 @@ function buildWins(days) {
       for (const sg of en.segments || []) {
         const emo = (sg.emotion || "").toLowerCase();
         const txt = itemPlainText(sg).trim();
-        if (txt && (VALENCE[emo] || 0) >= 1) wins.push({ key: k, emotion: emo, text: snippet(txt, 200) });
+        if (txt && sg.topic !== "Check-in" && (VALENCE[emo] || 0) >= 1) wins.push({ key: k, emotion: emo, text: snippet(txt, 200) });
       }
     }
     if (wins.length >= 40) break;
@@ -1151,6 +1144,18 @@ function AIConsentGate() {
 function LockScreen({ onUnlock }) {
   const [val, setVal] = useState("");
   const [err, setErr] = useState(false);
+  const [bio, setBio] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let on = false;
+      try { on = localStorage.getItem(FACEID_LS) === "1"; } catch (e) { }
+      if (!on || !(await bioAvailable()) || !alive) return;
+      setBio(true);
+      if (await bioAuthenticate()) onUnlock();
+    })();
+    return () => { alive = false; };
+  }, []);
   const go = async () => {
     if (val.length < 4) return;
     if ((await hashPin(val.trim())) === localStorage.getItem(PIN_KEY)) onUnlock();
@@ -1169,6 +1174,9 @@ function LockScreen({ onUnlock }) {
           onKeyDown={(e) => { if (e.key === "Enter") go(); }}
         />
         <button className="lg-go" onClick={go} disabled={val.length < 4}>Unlock</button>
+        {bio && (
+          <button className="lx-bio" onClick={async () => { if (await bioAuthenticate()) onUnlock(); }}>Use Face ID</button>
+        )}
         {err && <div className="lg-msg">Wrong PIN — try again.</div>}
       </div>
     </div>
@@ -1797,7 +1805,7 @@ function NpChoice({ value, options, onChange, label }) {
   );
 }
 
-function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJournal, onAddSchedule, mic, autoNew, onAutoNewDone }) {
+function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJournal, onAddSchedule, mic, autoNew, onAutoNewDone, openId, onOpenIdDone }) {
   const np = (settings.notepad && typeof settings.notepad === "object") ? settings.notepad : {};
   const look = { ...NP_DEFAULT_LOOK, ...(np.look || {}) };
   const savedViews = Array.isArray(np.savedFilters) ? np.savedFilters : [];
@@ -1995,6 +2003,7 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
       setNotesSync(() => list);
       setLoaded(true);
       if (autoNew) { createNote(); if (onAutoNewDone) onAutoNewDone(); }
+      else if (openId && list.some((n) => n.id === openId)) { openNote(openId); if (onOpenIdDone) onOpenIdDone(); }
       else if (!isNarrow) {
         const first = npApplyFilter(list, filter, new Set())[0];
         if (first) setSelId(first.id);
@@ -2009,6 +2018,12 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
     };
     document.addEventListener("visibilitychange", onVis);
     return () => { document.removeEventListener("visibilitychange", onVis); flushAll(); };
+  }, []);
+  // notes created elsewhere (e.g. an offline voice recording that finally got transcribed)
+  useEffect(() => {
+    const on = () => refresh();
+    window.addEventListener("lucid-notes-changed", on);
+    return () => window.removeEventListener("lucid-notes-changed", on);
   }, []);
 
   // photos only this note uses (a duplicate may share them) go with it
@@ -2555,6 +2570,9 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
         <button className="np-btn" onClick={() => setSheet("sort")} aria-label={"Sort notes: " + NP_SORTS[filter.sort]}>
           <NpIcon name="sort" />{NP_SORTS[filter.sort] || NP_SORTS.manual}
         </button>
+        <button className="np-btn" onClick={() => { setSheetData(null); setSheet("calendar"); }} aria-label="Notes by day">
+          <NpIcon name="calendar" />Calendar
+        </button>
       </div>
       {(savedViews.length > 0 || chips.length > 0) && (
         <div className="np-chiprow">
@@ -2871,6 +2889,44 @@ function NotepadPro({ settings, updateSettings, legacyText, isNarrow, onSendToJo
         </div>
       </NpSheet>
     );
+    if (sheet === "calendar") {
+      const nowD = new Date();
+      const cur = sheetData && sheetData.y != null ? sheetData : { y: nowD.getFullYear(), m: nowD.getMonth() };
+      const first = new Date(cur.y, cur.m, 1);
+      const dim = new Date(cur.y, cur.m + 1, 0).getDate();
+      const counts = {};
+      notes.forEach((n) => { if (!n.deletedAt) { const k = dayKey(new Date(n.updatedAt || n.createdAt || 0)); counts[k] = (counts[k] || 0) + 1; } });
+      const cells = [];
+      for (let i = 0; i < first.getDay(); i++) cells.push(null);
+      for (let d = 1; d <= dim; d++) cells.push(d);
+      const go = (delta) => { const d = new Date(cur.y, cur.m + delta, 1); setSheetData({ y: d.getFullYear(), m: d.getMonth() }); };
+      const todayK = dayKey();
+      return (
+        <NpSheet title="Notes by day" onClose={close}>
+          <div className="np-calhead">
+            <button className="np-icon" onClick={() => go(-1)} aria-label="Previous month"><NpIcon name="back" /></button>
+            <b>{first.toLocaleDateString([], { month: "long", year: "numeric" })}</b>
+            <button className="np-icon" onClick={() => go(1)} aria-label="Next month" style={{ transform: "scaleX(-1)" }}><NpIcon name="back" /></button>
+          </div>
+          <div className="np-cal" role="grid">
+            {["S", "M", "T", "W", "T", "F", "S"].map((l, i) => <span key={i} className="np-calwd">{l}</span>)}
+            {cells.map((d, i) => {
+              if (d == null) return <span key={"e" + i} />;
+              const k = cur.y + "-" + String(cur.m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+              const c = counts[k] || 0;
+              return (
+                <button key={k} className={"np-calday" + (c ? " has" : "") + (k === todayK ? " today" : "")} disabled={!c}
+                  aria-label={c ? c + " note" + (c === 1 ? "" : "s") + " on " + k : "No notes on " + k}
+                  onClick={() => { setFilter({ ...NP_DEFAULT_FILTER, sort: filter.sort, when: "range", from: k, to: k }); close(); }}>
+                  {d}{c > 0 && <i>{c}</i>}
+                </button>
+              );
+            })}
+          </div>
+          <p className="np-hint">Days show when a note was last edited. Tap one to list just those notes.</p>
+        </NpSheet>
+      );
+    }
     if (sheet === "sort") return (
       <NpSheet title="Sort notes" onClose={close}>
         <div className="np-menu" role="radiogroup" aria-label="Sort notes">
@@ -3452,6 +3508,15 @@ const NP_CSS = `
   .np-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 9500;
     background: var(--ink); color: var(--bg); font: 500 13.5px/1.4 var(--bodyfont); padding: 10px 18px; border-radius: 99px; box-shadow: 0 8px 30px rgba(0,0,0,.4); max-width: calc(100vw - 32px); text-align: center; box-sizing: border-box; }
 
+  .np-calhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .np-calhead b { font: 600 15px var(--disp); color: var(--ink); }
+  .np-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .np-calwd { font: 600 10px var(--bodyfont); color: var(--faint); text-align: center; padding: 4px 0; letter-spacing: .1em; }
+  .np-calday { position: relative; aspect-ratio: 1; border: 1px solid transparent; background: transparent; color: var(--faint); border-radius: 10px; font: 500 13px var(--bodyfont); cursor: default; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .np-calday.has { background: var(--soft); color: var(--ink); border-color: rgba(var(--accent-rgb), .35); cursor: pointer; font-weight: 600; }
+  .np-calday.today { box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .55); }
+  .np-calday i { position: absolute; right: 3px; top: 2px; font: 600 9px var(--bodyfont); color: var(--accent); font-style: normal; }
+  .np-calday:disabled { opacity: .55; }
   @media (max-width: 700px) {
     .np-top h2 { font-size: 20px; }
     .np-veil { align-items: flex-end; padding: calc(40px + env(safe-area-inset-top, 0px)) 0 0; }
@@ -3476,6 +3541,496 @@ const NP_CSS = `
     .np-rgrip { padding: 4px 4px 4px 0; }
     .np-icon { width: 38px; height: 38px; }
     .np-row { padding-top: 11px; padding-bottom: 11px; }
+  }
+`;
+
+// =====================================================================
+// ---------- Lucid extras ----------
+// streak freeze · Today card + mood check-in · search everything ·
+// offline voice queue · year-book export · journal filters · saved prompts · Face ID
+// =====================================================================
+
+// A streak survives ONE missed day per 7 (a "freeze"), as long as the days on
+// both sides of the gap were written. Today not being written yet never breaks it.
+function computeStreakInfo(days, freeze = true) {
+  let streak = 0, since = 99, frozen = 0, lastFrozen = "";
+  const d = new Date();
+  if (!days[dayKey(d)]) d.setDate(d.getDate() - 1);
+  for (let guard = 0; guard < 4000; guard++) {
+    const k = dayKey(d);
+    if (days[k]) { streak++; since++; }
+    else {
+      const p = new Date(d); p.setDate(p.getDate() - 1);
+      if (freeze && since >= 7 && streak > 0 && days[dayKey(p)]) { since = 0; frozen++; if (!lastFrozen) lastFrozen = k; }
+      else break;
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  return { streak, frozen, lastFrozen };
+}
+
+// ----- tiny IndexedDB store for voice recordings made without a connection -----
+const VQ_DB = "lucid-voice-queue";
+function vqOpen() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") { reject(new Error("no idb")); return; }
+    const r = indexedDB.open(VQ_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("q", { keyPath: "id" });
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function vqRun(mode, fn) {
+  const db = await vqOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("q", mode);
+    const res = fn(tx.objectStore("q"));
+    tx.oncomplete = () => { db.close(); resolve(res && res.result !== undefined ? res.result : undefined); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+const vqAdd = (item) => vqRun("readwrite", (s) => s.put(item));
+const vqAll = () => vqRun("readonly", (s) => s.getAll()).then((r) => r || []);
+const vqDelete = (id) => vqRun("readwrite", (s) => s.delete(id));
+const vqUserId = () => (window.__session && window.__session.user && window.__session.user.id) || "local";
+
+// ----- save a file through the share sheet, falling back to a download -----
+async function shareOrDownloadFile(blob, filename, text) {
+  try {
+    const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text: text || "" });
+      return "shared";
+    }
+  } catch (e) { if (e && e.name === "AbortError") return "cancelled"; }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return "downloaded";
+}
+
+// ----- year book: a printable HTML file (Print → Save as PDF) and a Markdown file -----
+const escHtml = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function collectBook(days, year, withImages) {
+  const keys = Object.keys(days).filter((k) => k.startsWith(String(year) + "-")).sort();
+  const imgs = {};
+  if (withImages) {
+    let n = 0;
+    for (const k of keys) for (const en of days[k].entries || []) for (const sg of en.segments || []) {
+      if (sg.type === "image" && sg.imgKey && n < 150) {
+        n++;
+        try { imgs[sg.imgKey] = (await window.storage.get(sg.imgKey)).value; } catch (e) { }
+      }
+    }
+  }
+  return { keys, imgs };
+}
+function buildBookHtml(days, settings, year, keys, imgs) {
+  const title = escHtml((settings.name || "Journal") + " — " + year);
+  const months = {};
+  keys.forEach((k) => { (months[k.slice(0, 7)] = months[k.slice(0, 7)] || []).push(k); });
+  let body = "";
+  let entries = 0, photos = 0;
+  Object.keys(months).sort().forEach((mk) => {
+    const mname = new Date(mk + "-01T12:00:00").toLocaleDateString([], { month: "long", year: "numeric" });
+    body += `<section class="month"><h2>${escHtml(mname)}</h2>`;
+    months[mk].forEach((k) => {
+      body += `<article class="day"><h3>${escHtml(prettyDate(k))}</h3>`;
+      (days[k].entries || []).forEach((en) => {
+        entries++;
+        (en.segments || []).forEach((sg) => {
+          const em = emotionOf((sg.emotion || "neutral").toLowerCase());
+          if (sg.type === "image") {
+            if (imgs[sg.imgKey]) { photos++; body += `<figure><img src="${imgs[sg.imgKey]}" alt="Journal photo"></figure>`; }
+            return;
+          }
+          const txt = itemPlainText(sg);
+          if (!txt.trim()) return;
+          const tags = segTags(sg).filter((t) => t && t !== "Notes").slice(0, 4).map((t) => "#" + t).join(" ");
+          body += `<div class="seg" style="border-color:${em.dot}"><div class="meta"><span class="dot" style="background:${em.dot}"></span>${escHtml(em.label)}${tags ? " · " + escHtml(tags) : ""}${en.time ? " · " + escHtml(en.time) : ""}</div><p>${escHtml(txt).replace(/\n/g, "<br>")}</p></div>`;
+        });
+      });
+      body += `</article>`;
+    });
+    body += `</section>`;
+  });
+  const css = `body{font:16px/1.65 Georgia,'Times New Roman',serif;color:#1c1f24;margin:0;background:#fff}
+.cover{min-height:92vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;page-break-after:always}
+.cover h1{font:700 44px/1.1 'Helvetica Neue',Arial,sans-serif;margin:0 0 12px;letter-spacing:-.02em}.cover p{color:#667;margin:4px 0}
+main{max-width:720px;margin:0 auto;padding:24px 22px 60px}
+.month{page-break-before:always}.month:first-of-type{page-break-before:auto}
+h2{font:700 28px 'Helvetica Neue',Arial,sans-serif;border-bottom:2px solid #1c1f24;padding-bottom:6px;margin:32px 0 8px}
+h3{font:600 13px 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.12em;color:#667;margin:26px 0 8px}
+.day{break-inside:avoid-page}.seg{border-left:4px solid #999;padding:2px 0 2px 14px;margin:10px 0}
+.meta{font:12px 'Helvetica Neue',Arial,sans-serif;color:#667;display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.seg p{margin:2px 0}
+figure{margin:12px 0}figure img{max-width:100%;max-height:420px;border-radius:8px}
+@media print{.noprint{display:none}main{padding:0}}`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${css}</style></head><body>
+<div class="cover"><h1>${escHtml(settings.name || "Journal")}</h1><p>${escHtml(String(year))}</p><p>${keys.length} days · ${entries} entries${photos ? " · " + photos + " photos" : ""}</p><p class="noprint" style="margin-top:28px;font:14px Arial,sans-serif">To make a PDF: open this file, then choose Print → Save as PDF.</p></div>
+<main>${body}</main></body></html>`;
+  return { html, entries, photos };
+}
+function buildBookMarkdown(days, settings, year, keys) {
+  const out = ["# " + (settings.name || "Journal") + " — " + year, ""];
+  keys.forEach((k) => {
+    out.push("## " + prettyDate(k), "");
+    (days[k].entries || []).forEach((en) => (en.segments || []).forEach((sg) => {
+      if (sg.type === "image") return;
+      const txt = itemPlainText(sg).trim(); if (!txt) return;
+      const em = (sg.emotion || "neutral");
+      out.push("**" + em + (en.time ? " · " + en.time : "") + "** — " + txt.replace(/\n/g, "  \n"), "");
+    }));
+  });
+  return out.join("\n");
+}
+
+// ----- journal filters (mood / dates / photos) + saved views -----
+const JF_DEFAULT = { emotions: [], from: "", to: "", photos: false };
+const JF_LS = "lucid:jf:v1";
+const jfActive = (f) => !!(f.emotions.length || f.from || f.to || f.photos);
+const jfChips = (f) => {
+  const c = [];
+  f.emotions.forEach((e) => c.push({ k: "e:" + e, label: emotionOf(e).label, color: emotionOf(e).dot }));
+  if (f.from || f.to) c.push({ k: "range", label: (f.from || "…") + " → " + (f.to || "…") });
+  if (f.photos) c.push({ k: "photos", label: "Photos only" });
+  return c;
+};
+const jfDrop = (f, k) => {
+  const g = { ...f, emotions: f.emotions.slice() };
+  if (k.startsWith("e:")) g.emotions = g.emotions.filter((e) => e !== k.slice(2));
+  else if (k === "range") { g.from = ""; g.to = ""; }
+  else if (k === "photos") g.photos = false;
+  return g;
+};
+
+// ----- Today card -----
+const CHECKIN_MOODS = ["happy", "calm", "grateful", "hopeful", "tired", "anxious", "sad", "angry"];
+function TodayCard({ days, onCheckIn, onWrite, streakInfo, freezeOn }) {
+  const [done, setDone] = useState("");
+  const timer = useRef(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const now = new Date();
+  const hr = now.getHours();
+  const greet = hr < 5 ? "Still up?" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening";
+  const dom = dominantEmotionByDay(days);
+  const week = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = dayKey(d);
+    week.push({ k, lbl: d.toLocaleDateString([], { weekday: "narrow" }), has: !!days[k], today: i === 0, emo: dom[k] });
+  }
+  const wrote = !!days[dayKey()];
+  const tap = (m) => {
+    onCheckIn(m);
+    setDone(emotionOf(m).label);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setDone(""), 2200);
+  };
+  return (
+    <section className="lx-today" aria-label="Today">
+      <div className="lx-today-top">
+        <div>
+          <div className="lx-date">{now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}</div>
+          <div className="lx-greet">{greet}</div>
+        </div>
+        <div className="lx-week" role="img" aria-label={"Days written this week: " + week.filter((w) => w.has).length + " of 7"}>
+          {week.map((w) => (
+            <span key={w.k} className={"lx-wd" + (w.today ? " today" : "")}>
+              <i style={w.has ? { background: w.emo ? emotionOf(w.emo).dot : "var(--accent)", borderColor: "transparent" } : undefined} />
+              <b>{w.lbl}</b>
+            </span>
+          ))}
+        </div>
+      </div>
+      {freezeOn && streakInfo && streakInfo.frozen > 0 && (
+        <div className="lx-freeze">❄ A streak freeze covered a missed day, so your {streakInfo.streak}-day streak is safe.</div>
+      )}
+      <div className="lx-checkin">
+        <span className="lx-q">{done ? "Logged: " + done : "How are you feeling right now?"}</span>
+        <div className="lx-moods" role="group" aria-label="Quick mood check-in">
+          {CHECKIN_MOODS.map((m) => {
+            const e = emotionOf(m);
+            return (
+              <button key={m} className="lx-mood" onClick={() => tap(m)} style={{ "--mc": e.dot }}>
+                <i />{e.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <button className="lx-write" onClick={onWrite}>{wrote ? "Add to today" : "Write today's entry"}</button>
+    </section>
+  );
+}
+
+// ----- search everything: journal + notes in one place -----
+function GlobalSearch({ days, onClose, onOpenDay, onOpenNote }) {
+  const [q, setQ] = useState("");
+  const [notes, setNotes] = useState([]);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let keys = [];
+      try { keys = ((await window.storage.list(NOTE_PREFIX)) || {}).keys || []; } catch (e) { }
+      const got = await Promise.all(keys.map(async (k) => { try { return JSON.parse((await window.storage.get(k)).value); } catch (e) { return null; } }));
+      if (alive) setNotes(got.filter((n) => n && n.id && typeof n.body === "string" && !n.deletedAt));
+    })();
+    if (inputRef.current) inputRef.current.focus();
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => { alive = false; window.removeEventListener("keydown", k); };
+  }, []);
+  const ql = q.trim().toLowerCase();
+  const around = (txt, idx, len) => {
+    const s = Math.max(0, idx - 36), e = Math.min(txt.length, idx + len + 90);
+    return { pre: (s > 0 ? "…" : "") + txt.slice(s, idx), hit: txt.slice(idx, idx + len), post: txt.slice(idx + len, e) + (e < txt.length ? "…" : "") };
+  };
+  const entryHits = React.useMemo(() => {
+    if (ql.length < 2) return [];
+    const out = [];
+    for (const k of Object.keys(days).sort().reverse()) {
+      for (const en of days[k].entries || []) for (const sg of en.segments || []) {
+        const txt = itemPlainText(sg).replace(/\s+/g, " ");
+        const i = txt.toLowerCase().indexOf(ql);
+        if (i >= 0) out.push({ k, ...around(txt, i, ql.length) });
+        if (out.length >= 40) return out;
+      }
+    }
+    return out;
+  }, [ql, days]);
+  const noteHits = React.useMemo(() => {
+    if (ql.length < 2) return [];
+    const out = [];
+    for (const n of notes) {
+      const title = noteTitle(n);
+      const body = n.locked ? "" : notePlain(n).replace(/\s+/g, " ");
+      const ti = title.toLowerCase().indexOf(ql), bi = body.toLowerCase().indexOf(ql);
+      const tagHit = (n.tags || []).some((t) => t.toLowerCase().includes(ql));
+      if (ti >= 0 || bi >= 0 || tagHit) out.push({ n, title, snip: bi >= 0 ? around(body, bi, ql.length) : null });
+      if (out.length >= 25) break;
+    }
+    return out;
+  }, [ql, notes]);
+  const Hi = ({ s }) => (<>{s.pre}<mark>{s.hit}</mark>{s.post}</>);
+  const none = ql.length >= 2 && !entryHits.length && !noteHits.length;
+  return (
+    <div className="lx-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="lx-sheet" role="dialog" aria-modal="true" aria-label="Search everything">
+        <div className="lx-sheethead">
+          <input ref={inputRef} className="lx-searchinput" type="search" placeholder="Search journal entries and notes" value={q}
+            onChange={(e) => setQ(e.target.value)} aria-label="Search everything" />
+          <button className="lx-x" onClick={onClose} aria-label="Close search">×</button>
+        </div>
+        <div className="lx-sheetbody">
+          {ql.length < 2 && <p className="lx-hint">Type at least two letters. Locked notes show up by title only.</p>}
+          {none && <p className="lx-hint">Nothing found for “{q.trim()}”.</p>}
+          {entryHits.length > 0 && (
+            <>
+              <h4 className="lx-grp">Journal · {entryHits.length}{entryHits.length >= 40 ? "+" : ""}</h4>
+              <ul className="lx-results">
+                {entryHits.map((h, i) => (
+                  <li key={h.k + i}><button onClick={() => onOpenDay(h.k, q.trim())}>
+                    <b>{prettyDate(h.k)}</b><span><Hi s={h} /></span>
+                  </button></li>
+                ))}
+              </ul>
+            </>
+          )}
+          {noteHits.length > 0 && (
+            <>
+              <h4 className="lx-grp">Notes · {noteHits.length}</h4>
+              <ul className="lx-results">
+                {noteHits.map(({ n, title, snip }) => (
+                  <li key={n.id}><button onClick={() => onOpenNote(n.id)}>
+                    <b>{n.locked ? "🔒 " : ""}{title}</b>{snip && <span><Hi s={snip} /></span>}
+                  </button></li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----- journal filter sheet -----
+function JournalFilterSheet({ f, setF, onClose, views, onSaveView, onApplyView, onDeleteView, matchCount }) {
+  const [name, setName] = useState("");
+  const toggleEmo = (e) => setF((p) => ({ ...p, emotions: p.emotions.includes(e) ? p.emotions.filter((x) => x !== e) : [...p.emotions, e] }));
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  const active = jfActive(f);
+  return (
+    <div className="lx-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="lx-sheet" role="dialog" aria-modal="true" aria-label="Filter your journal">
+        <div className="lx-sheethead"><b>Filter your journal</b><button className="lx-x" onClick={onClose} aria-label="Close">×</button></div>
+        <div className="lx-sheetbody">
+          <h4 className="lx-grp">Mood</h4>
+          <div className="lx-chipwrap">
+            {Object.keys(EMOTIONS).map((e) => {
+              const em = emotionOf(e);
+              return (
+                <button key={e} className={f.emotions.includes(e) ? "lx-fchip on" : "lx-fchip"} aria-pressed={f.emotions.includes(e)} onClick={() => toggleEmo(e)}>
+                  <i style={{ background: em.dot }} />{em.label}
+                </button>
+              );
+            })}
+          </div>
+          <h4 className="lx-grp">Dates</h4>
+          <div className="lx-range">
+            <label>From <input type="date" value={f.from} max={f.to || undefined} onChange={(e) => { const v = e.target.value; setF((p) => ({ ...p, from: v })); }} /></label>
+            <label>To <input type="date" value={f.to} min={f.from || undefined} onChange={(e) => { const v = e.target.value; setF((p) => ({ ...p, to: v })); }} /></label>
+          </div>
+          <h4 className="lx-grp">Only show</h4>
+          <div className="lx-chipwrap">
+            <button className={f.photos ? "lx-fchip on" : "lx-fchip"} aria-pressed={f.photos} onClick={() => setF((p) => ({ ...p, photos: !p.photos }))}>Photos</button>
+          </div>
+          {views.length > 0 && (
+            <>
+              <h4 className="lx-grp">Saved views</h4>
+              <div className="lx-chipwrap">
+                {views.map((v) => (
+                  <span key={v.id} className="lx-view">
+                    <button onClick={() => onApplyView(v)}>★ {v.name}</button>
+                    <button className="lx-viewx" aria-label={"Delete view " + v.name} onClick={() => onDeleteView(v.id)}>×</button>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          {active && (
+            <form className="lx-saveview" onSubmit={(e) => { e.preventDefault(); if (name.trim()) { onSaveView(name.trim()); setName(""); } }}>
+              <input placeholder="Save this filter as…" value={name} maxLength={30} onChange={(e) => setName(e.target.value)} aria-label="Name for saved view" />
+              <button type="submit" disabled={!name.trim()}>Save view</button>
+            </form>
+          )}
+          <div className="lx-foot">
+            <button className="lx-link" onClick={() => setF({ ...JF_DEFAULT })}>Clear all</button>
+            <button className="lx-primary" onClick={onClose}>Show {matchCount} day{matchCount === 1 ? "" : "s"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----- Face ID / Touch ID (native only; the bridge plugin is optional) -----
+const FACEID_LS = "lucid:faceid:v1";
+const getBio = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BiometricAuth) || null;
+async function bioAvailable() {
+  const B = getBio();
+  if (!B || !B.checkBiometry) return false;
+  try { const r = await B.checkBiometry(); return !!(r && r.isAvailable); } catch (e) { return false; }
+}
+async function bioAuthenticate() {
+  const B = getBio();
+  if (!B || !B.authenticate) return false;
+  try { await B.authenticate({ reason: "Unlock your journal", cancelTitle: "Use PIN", allowDeviceCredential: false, iosFallbackTitle: "Use PIN" }); return true; }
+  catch (e) { return false; }
+}
+
+const LX_CSS = `
+  /* Today card */
+  .lx-today { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px 18px 16px; margin: 0 0 14px;
+    background-image: linear-gradient(135deg, rgba(var(--accent-rgb), .08), transparent 55%); }
+  .lx-today-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .lx-date { font: 600 11px var(--bodyfont); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  .lx-greet { font: 600 24px/1.2 var(--disp); color: var(--ink); letter-spacing: -.01em; margin-top: 2px; }
+  .lx-week { display: flex; gap: 7px; align-items: flex-end; }
+  .lx-wd { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .lx-wd i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--dash); display: block; box-sizing: border-box; transition: transform .2s; }
+  .lx-wd.today i { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18); }
+  .lx-wd b { font: 600 9.5px var(--bodyfont); color: var(--faint); }
+  .lx-wd.today b { color: var(--accent); }
+  .lx-freeze { margin-top: 10px; font-size: 12.5px; color: var(--body); background: rgba(95,168,255,.1); border: 1px solid rgba(95,168,255,.25); border-radius: 10px; padding: 8px 12px; line-height: 1.45; }
+  .lx-checkin { margin-top: 14px; }
+  .lx-q { font-size: 13px; color: var(--body); display: block; margin-bottom: 8px; min-height: 18px; }
+  .lx-moods { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lx-mood { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--inputbg); color: var(--body);
+    font: 500 12.5px var(--bodyfont); padding: 7px 12px; border-radius: 99px; cursor: pointer; min-height: 34px; transition: transform .12s, border-color .15s, background .15s; }
+  .lx-mood i { width: 9px; height: 9px; border-radius: 50%; background: var(--mc); display: block; }
+  .lx-mood:hover { border-color: var(--mc); }
+  .lx-mood:active { transform: scale(.94); }
+  .lx-write { margin-top: 14px; width: 100%; background: var(--accent); border: 1px solid var(--accent); color: var(--btn-text, #0a0b0e);
+    font: 600 14px var(--bodyfont); padding: 12px; border-radius: 99px; cursor: pointer; transition: transform .12s, filter .15s; }
+  .lx-write:hover { filter: brightness(1.06); } .lx-write:active { transform: scale(.985); }
+  .xo-promptcard > b { padding-right: 78px; }
+  .lx-info { font-size: 12.5px; color: var(--accent); margin: 8px 0 0; line-height: 1.45; }
+  /* overlays */
+  .lx-veil { position: fixed; inset: 0; z-index: 9100; background: rgba(5,6,8,.72); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    display: flex; align-items: flex-start; justify-content: center; padding: calc(56px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); animation: lxfade .15s ease; }
+  .lx-sheet { width: 100%; max-width: 560px; max-height: 100%; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line);
+    border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55); overflow: hidden; animation: lxrise .2s ease; }
+  .lx-sheethead { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--line); }
+  .lx-sheethead b { flex: 1; font: 600 16px var(--disp); color: var(--ink); }
+  .lx-searchinput { flex: 1; min-width: 0; background: var(--inputbg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--ink); font: 16px var(--bodyfont); outline: none; caret-color: var(--accent); }
+  .lx-searchinput:focus { border-color: rgba(var(--accent-rgb), .6); }
+  .lx-x { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--body); font-size: 20px; line-height: 1; cursor: pointer; flex: none; }
+  .lx-sheetbody { padding: 6px 16px 16px; overflow-y: auto; overscroll-behavior: contain; }
+  .lx-hint { font-size: 13px; color: var(--faint); line-height: 1.55; margin: 12px 0; }
+  .lx-grp { font: 600 10.5px var(--bodyfont); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 16px 0 8px; }
+  .lx-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .lx-results button { width: 100%; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 9px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: var(--ink); }
+  .lx-results button:hover, .lx-results button:focus-visible { background: rgba(var(--strong-rgb), .05); border-color: var(--line); outline: none; }
+  .lx-results b { font: 600 13px var(--bodyfont); overflow-wrap: anywhere; }
+  .lx-results span { font-size: 12.5px; color: var(--faint); line-height: 1.5; overflow-wrap: anywhere; }
+  .lx-results mark { background: rgba(var(--accent-rgb), .28); color: var(--ink); border-radius: 3px; padding: 0 1px; }
+  .lx-chipwrap { display: flex; gap: 6px; flex-wrap: wrap; }
+  .lx-fchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--card); color: var(--body); font: 500 12.5px var(--bodyfont); padding: 6px 12px; border-radius: 99px; cursor: pointer; min-height: 32px; }
+  .lx-fchip i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+  .lx-fchip.on { color: var(--accent); border-color: rgba(var(--accent-rgb), .5); background: var(--soft); }
+  .lx-range { display: flex; gap: 12px; flex-wrap: wrap; }
+  .lx-range label { font-size: 12.5px; color: var(--faint); display: flex; flex-direction: column; gap: 4px; }
+  .lx-range input, .lx-saveview input { background: var(--inputbg); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 7px 9px; font: 14px var(--bodyfont); color-scheme: dark; min-height: 38px; box-sizing: border-box; }
+  .lx-view { display: inline-flex; align-items: center; border: 1px solid var(--dash); border-radius: 99px; }
+  .lx-view button { background: none; border: none; color: var(--body); font: 500 12.5px var(--bodyfont); padding: 6px 4px 6px 12px; cursor: pointer; }
+  .lx-view .lx-viewx { color: var(--faint); padding: 6px 10px 6px 4px; }
+  .lx-saveview { display: flex; gap: 8px; margin-top: 16px; }
+  .lx-saveview input { flex: 1; min-width: 0; font-size: 16px; }
+  .lx-saveview button, .lx-primary { background: var(--accent); border: 1px solid var(--accent); color: var(--btn-text, #0a0b0e); font: 600 13px var(--bodyfont); padding: 8px 16px; border-radius: 99px; cursor: pointer; min-height: 36px; }
+  .lx-saveview button:disabled { opacity: .45; }
+  .lx-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; gap: 10px; }
+  .lx-link { background: none; border: none; color: var(--accent); font: 500 13px var(--bodyfont); cursor: pointer; padding: 6px; }
+  .lx-filterchips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; align-items: center; }
+  .lx-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(var(--accent-rgb), .45); background: var(--soft); color: var(--accent); font: 500 12px var(--bodyfont); padding: 5px 11px; border-radius: 99px; cursor: pointer; }
+  .lx-chip i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+  .lx-filterbtn { background: transparent; border: 1px solid var(--line); color: var(--body); font: 500 13px var(--bodyfont); padding: 0 14px; border-radius: 10px; cursor: pointer; min-height: 38px; white-space: nowrap; }
+  .lx-filterbtn.on { color: var(--accent); border-color: rgba(var(--accent-rgb), .5); background: var(--soft); }
+  .lx-searchbtn { background: transparent; border: 1px solid var(--dash); color: var(--faint); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; margin-right: 8px; flex: none; }
+  .lx-searchbtn:hover { color: var(--ink); border-color: var(--faint); }
+  /* saved prompts + settings rows */
+  .lx-promptlist { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .lx-promptlist li { display: flex; align-items: flex-start; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; background: var(--inputbg); }
+  .lx-promptlist li span { flex: 1; min-width: 0; font-size: 13.5px; color: var(--ink); line-height: 1.45; overflow-wrap: anywhere; }
+  .lx-promptlist button { background: none; border: 1px solid var(--line); color: var(--body); border-radius: 8px; font: 12px var(--bodyfont); cursor: pointer; padding: 4px 8px; min-height: 28px; }
+  .lx-star { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 16px; padding: 2px 6px; line-height: 1; }
+  .lx-star.on { color: #f5b547; }
+  .lx-select { background: var(--inputbg); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; min-height: 38px; color: var(--body); font: 14px var(--bodyfont); }
+  body.lx-overlay-open .xo-tabbar { display: none !important; }
+  .lx-bio { width: 100%; margin-top: 10px; background: transparent; border: 1px solid var(--dash); color: var(--body); border-radius: 99px; padding: 11px; font: 500 14px 'Inter', sans-serif; cursor: pointer; }
+  /* motion */
+  @keyframes lxfade { from { opacity: 0; } }
+  @keyframes lxrise { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes lxview { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes lxpop { 40% { transform: scale(1.25); } }
+  .xo-shell.lx-vin > :not(.xo-top):not(.xo-tabbar) { animation: lxview .28s ease both; }
+  .np-rcheck input:checked, .np-todolist input:checked { animation: lxpop .25s ease; }
+  .xo-root button:not(:disabled):active { transform: scale(.97); }
+  @media (prefers-reduced-motion: reduce) {
+    .xo-shell.lx-vin > :not(.xo-top):not(.xo-tabbar), .lx-veil, .lx-sheet, .np-rcheck input:checked, .np-todolist input:checked { animation: none !important; }
+    .xo-root button:not(:disabled):active { transform: none; }
+  }
+  @media (max-width: 700px) {
+    .lx-veil { align-items: flex-end; padding: calc(40px + env(safe-area-inset-top, 0px)) 0 0; }
+    .lx-sheet { max-width: none; border-radius: 20px 20px 0 0; border-bottom: none; padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .lx-greet { font-size: 22px; }
+    .lx-searchinput { font-size: 16px; }
   }
 `;
 
@@ -3577,6 +4132,40 @@ function XOJournal() {
   const [newGoal, setNewGoal] = useState("");
   const [goalSugs, setGoalSugs] = useState([]);
   const [sugBusy, setSugBusy] = useState(false);
+  // ----- extras: search, journal filters, offline voice, Face ID, year book -----
+  const [showSearch, setShowSearch] = useState(false);
+  const [npOpenId, setNpOpenId] = useState(null);
+  const [jf, setJfState] = useState(() => {
+    try { const f = JSON.parse(localStorage.getItem(JF_LS) || "null"); if (f && typeof f === "object") return { ...JF_DEFAULT, ...f }; } catch (e) { }
+    return { ...JF_DEFAULT };
+  });
+  const jfRef = useRef(jf);
+  // accepts a value or an updater, so quick consecutive taps never overwrite each other
+  const setJf = (fOrFn) => {
+    const next = typeof fOrFn === "function" ? fOrFn(jfRef.current) : fOrFn;
+    jfRef.current = next;
+    setJfState(next);
+    try { localStorage.setItem(JF_LS, JSON.stringify(next)); } catch (e) { }
+  };
+  const [showJF, setShowJF] = useState(false);
+  const [voiceInfo, setVoiceInfo] = useState("");
+  const [voiceQueued, setVoiceQueued] = useState(0);
+  const processingVoice = useRef(false);
+  const [bioAvail, setBioAvail] = useState(false);
+  const [bioOn, setBioOn] = useState(() => { try { return localStorage.getItem(FACEID_LS) === "1"; } catch (e) { return false; } });
+  const [bookYear, setBookYear] = useState(new Date().getFullYear());
+  const [bookBusy, setBookBusy] = useState(false);
+  useEffect(() => {
+    const el = document.querySelector(".xo-shell");
+    if (!el) return;
+    el.classList.remove("lx-vin"); void el.offsetWidth; el.classList.add("lx-vin"); // gentle fade/rise on tab change
+  }, [view]);
+  useEffect(() => {
+    document.body.classList.toggle("lx-overlay-open", showSearch || showJF);
+    return () => document.body.classList.remove("lx-overlay-open");
+  }, [showSearch, showJF]);
+  useEffect(() => { bioAvailable().then(setBioAvail); }, []);
+  useEffect(() => { if (!voiceInfo) return; const t = setTimeout(() => setVoiceInfo(""), 8000); return () => clearTimeout(t); }, [voiceInfo]);
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
   const recRef = useRef(null);            // legacy Web Speech fallback
@@ -3907,29 +4496,41 @@ Their overall profile: ${vibe.text}`, 400);
     if (loaded) setRewind(pickRewind(days));
   }, [loaded]);
 
-  // ----- weekly letter: first open each Sunday, the AI writes the week up -----
+  // ----- weekly letter: the first time you open Lucid after your chosen day + time, the AI writes the week up -----
   useEffect(() => {
     if (!loaded) return;
+    const letterDay = Number.isInteger(settings.letterDay) ? settings.letterDay : 0;
+    const letterHour = Number.isInteger(settings.letterHour) ? settings.letterHour : 0;
     const now = new Date();
-    if (now.getDay() !== 0) return;
-    const sundayK = dayKey(now);
+    const target = new Date(now);
+    target.setHours(letterHour, 0, 0, 0);
+    target.setDate(target.getDate() - ((now.getDay() - letterDay + 7) % 7));
+    if (target > now) target.setDate(target.getDate() - 7);
+    const letterK = dayKey(target);
     (async () => {
       const last = await loadJSON(LETTER_KEY, "");
-      if (last === sundayK) return;
+      if (last === letterK) return;
       const digest = buildDigest(days, 7);
       if (!digest) return;
+      const weekAgo = dayKey(new Date(Date.now() - 7 * 864e5));
+      const wins = buildWins(days).filter((w) => w.key >= weekAgo).slice(0, 3).map((w) => "- " + w.text).join("\n");
+      const old = pickRewind(days);
+      const oldTxt = old ? snippet(itemPlainText(old.seg), 220) : "";
+      const finish = oldTxt ? ' Finish with a final line that starts exactly "Worth revisiting:" and paraphrases the older note below in one short sentence, naming when they wrote it.' : "";
+      const winsBlock = wins ? "\n\nBright spots from this week (their own words):\n" + wins : "";
+      const oldBlock = oldTxt ? "\n\nAn older note they might like to revisit (written " + prettyDate(old.day, true) + "):\n\"\"\"" + oldTxt + "\"\"\"" : "";
       try {
-        const text = await callClaude(`You are the AI living inside someone's private journal, writing them a short Sunday letter about their week. Below is a digest of their entries (dates, topic labels, snippets). Write 100-160 words: what they focused on, how their moods moved, one specific moment worth remembering, and one gentle thought for the week ahead. Speak directly to them ("you"), warm and honest, late-night tone. No markdown, no lists, no emoji, no greeting.
+        const text = await callClaude(`You are the AI living inside someone's private journal, writing them a short weekly letter about their week. Below is a digest of their entries (dates, topic labels, snippets). Write 110-170 words: what they focused on, how their moods moved, one bright spot they actually wrote about, and one gentle thought for the week ahead. Speak directly to them ("you"), warm and honest, late-night tone. No markdown, no lists, no emoji, no greeting.${finish}
 
 Their week:
-"""${digest}"""`, 800);
+"""${digest}"""${winsBlock}${oldBlock}`, 900);
         if (text) {
           const time = nowTime();
-          pushEntry(sundayK, {
+          pushEntry(letterK, {
             id: uid(), time,
             segments: [{ id: uid(), type: "recap", text: text.trim(), topic: "Weekly Letter", emotion: "calm", time }],
           });
-          saveJSON(LETTER_KEY, sundayK);
+          saveJSON(LETTER_KEY, letterK);
         }
       } catch (e) { /* try again next open */ }
     })();
@@ -3995,10 +4596,72 @@ Their week:
     r.readAsDataURL(blob);
   });
 
+  const refreshVoiceQueued = async () => {
+    try { setVoiceQueued((await vqAll()).filter((i) => i.user === vqUserId()).length); } catch (e) { }
+  };
+  // recordings made with no signal are kept on the device (IndexedDB) and sent when it's back
+  const queueVoice = async (audio, mime, target) => {
+    try {
+      await vqAdd({ id: uid() + uid(), user: vqUserId(), t: Date.now(), audio, mime, target });
+      setVoiceInfo("You're offline, so this recording is saved on your device and will become text when you're back online.");
+      refreshVoiceQueued();
+      return true;
+    } catch (e) { return false; }
+  };
+  const processVoiceQueue = async () => {
+    if (navigator.onLine === false || processingVoice.current) return;
+    let items = [];
+    try { items = (await vqAll()).filter((i) => i.user === vqUserId()); } catch (e) { return; }
+    if (!items.length) { setVoiceQueued(0); return; }
+    if (getAIConsent() !== "yes") return; // voice goes to a third-party service: only with consent
+    processingVoice.current = true;
+    try {
+      items.sort((a, b) => a.t - b.t);
+      for (const it of items) {
+        const token = window.__session && window.__session.access_token;
+        let res, data;
+        try {
+          res = await fetch(API_BASE + "/api/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ audio: it.audio, mime: it.mime }),
+          });
+          data = await res.json().catch(() => ({}));
+        } catch (e) { break; } // still offline: keep the rest for later
+        if (!res.ok) { if (res.status >= 500 || res.status === 401 || res.status === 429) break; await vqDelete(it.id); continue; }
+        const t = String(data.text || "").trim();
+        if (t) {
+          if (it.target === "note") {
+            const when = new Date(it.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+            const n = newNoteObj({ title: "Voice note · " + when, body: t, order: -1 });
+            await window.storage.set(NOTE_PREFIX + n.id, JSON.stringify(n));
+            window.dispatchEvent(new Event("lucid-notes-changed"));
+            setVoiceInfo("Your offline recording is now a note: “Voice note · " + when + "”.");
+          } else {
+            setDraft((d) => (d ? d.replace(/s+$/, "") + " " : "") + t);
+            setVoiceInfo("Your offline recording was added to the entry box.");
+          }
+        }
+        await vqDelete(it.id);
+      }
+    } finally { processingVoice.current = false; refreshVoiceQueued(); }
+  };
+  useEffect(() => {
+    if (!loaded) return;
+    refreshVoiceQueued();
+    processVoiceQueue();
+    const on = () => processVoiceQueue();
+    window.addEventListener("online", on);
+    return () => window.removeEventListener("online", on);
+  }, [loaded]);
+
   const transcribeBlob = async (blob) => {
     setTranscribing(true); setError("");
+    let audio = null;
+    const target = micSinkRef.current ? "note" : "journal";
     try {
-      const audio = await blobToBase64(blob);
+      audio = await blobToBase64(blob);
+      if (navigator.onLine === false && (await queueVoice(audio, blob.type || "audio/webm", target))) return;
       const token = window.__session && window.__session.access_token;
       const res = await fetch(API_BASE + "/api/transcribe", {
         method: "POST",
@@ -4017,6 +4680,7 @@ Their week:
         setError("Didn't catch anything — try speaking a little longer.");
       }
     } catch (e) {
+      if (audio && (await queueVoice(audio, blob.type || "audio/webm", target))) return; // network dropped mid-way
       setError("Couldn't reach the transcription service — check your connection.");
     } finally {
       setTranscribing(false);
@@ -4622,7 +5286,7 @@ Digest:
   const MILESTONES = [3, 7, 14, 30, 50, 75, 100, 150, 200, 300, 365, 500, 730, 1000];
   useEffect(() => {
     if (!loaded) return;
-    const s = computeStreak(days);
+    const s = computeStreak(days, settings.streakFreeze !== false);
     if (!MILESTONES.includes(s)) return;
     const key = "daybook:celebrated:" + ((window.__session && window.__session.user && window.__session.user.id) || "local");
     let last = 0; try { last = parseInt(localStorage.getItem(key) || "0", 10) || 0; } catch (e) { }
@@ -4762,6 +5426,62 @@ Digest:
   };
 
   // ----- export -----
+  // ----- quick mood check-in (no AI): logs a one-line entry with that mood -----
+  const doCheckIn = (m) => {
+    const em = emotionOf(m);
+    const time = nowTime();
+    pushEntry(dayKey(), { id: uid(), time, segments: [{ id: uid(), type: "text", text: "Checked in: feeling " + em.label.toLowerCase() + ".", tags: ["Check-in"], topic: "Check-in", emotion: m, time }] });
+    haptic("Light");
+  };
+  const focusComposer = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => ta.focus(), 250);
+  };
+
+  // ----- saved prompts: keep the ones you like, reorder, reuse -----
+  const savedPrompts = Array.isArray(settings.savedPrompts) ? settings.savedPrompts : [];
+  const promptSaved = !!welcome && savedPrompts.some((p) => p.text === welcome);
+  const togglePromptSaved = (text) => {
+    const t = String(text || "").trim();
+    if (!t) return;
+    const has = savedPrompts.some((p) => p.text === t);
+    updateSettings({ savedPrompts: has ? savedPrompts.filter((p) => p.text !== t) : [...savedPrompts, { id: uid(), text: t }].slice(-30) });
+  };
+  const movePrompt = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= savedPrompts.length) return;
+    const next = savedPrompts.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    updateSettings({ savedPrompts: next });
+  };
+  const deletePrompt = (id) => updateSettings({ savedPrompts: savedPrompts.filter((p) => p.id !== id) });
+  const usePrompt = (p) => { setWelcome(p.text); setShowCustomize(false); setView("journal"); window.scrollTo(0, 0); };
+  const cycleSavedPrompt = () => {
+    if (!savedPrompts.length) return;
+    const i = savedPrompts.findIndex((p) => p.text === welcome);
+    setWelcome(savedPrompts[(i + 1) % savedPrompts.length].text);
+  };
+
+  // ----- year book export (printable HTML → PDF, or Markdown) -----
+  const exportBook = async (year, kind) => {
+    if (bookBusy) return;
+    setBookBusy(true);
+    try {
+      const { keys, imgs } = await collectBook(days, year, kind === "html");
+      if (!keys.length) return;
+      const base = (settings.name || "journal").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").toLowerCase() + "-" + year;
+      if (kind === "md") {
+        await shareOrDownloadFile(new Blob([buildBookMarkdown(days, settings, year, keys)], { type: "text/markdown;charset=utf-8" }), base + ".md", "");
+      } else {
+        const { html } = buildBookHtml(days, settings, year, keys, imgs);
+        await shareOrDownloadFile(new Blob([html], { type: "text/html;charset=utf-8" }), base + "-book.html", "");
+      }
+    } catch (e) { console.error(e); setError("Couldn't build the book — try again."); }
+    finally { setBookBusy(false); }
+  };
+
   const exportJournal = () => {
     const lines = [settings.name || "My Journal"];
     if (settings.tagline) lines.push(settings.tagline);
@@ -4806,6 +5526,7 @@ Digest:
   // ----- derived -----
   const dayKeys = Object.keys(days).sort((a, b) => (a < b ? 1 : -1));
   const hasEntries = dayKeys.length > 0;
+  const bookYears = Array.from(new Set(dayKeys.map((k) => k.slice(0, 4)))).sort().reverse();
 
   const allTopics = {};
   eachSegment(days, (k, en, sg) => {
@@ -4826,13 +5547,17 @@ Digest:
   })();
 
   const q = query.trim().toLowerCase();
+  const jfOn = jfActive(jf);
   const segMatches = (seg) => {
     const topicOk = !topicFilter || segTags(seg).some((t) => t.toLowerCase() === topicFilter.toLowerCase());
     const textOk = !q || itemPlainText(seg).toLowerCase().includes(q);
     const favOk = !favFilter || seg.fav;
-    return topicOk && textOk && favOk;
+    const moodOk = !jf.emotions.length || jf.emotions.includes((seg.emotion || "neutral").toLowerCase());
+    const photoOk = !jf.photos || seg.type === "image";
+    return topicOk && textOk && favOk && moodOk && photoOk;
   };
   const filteredDays = dayKeys
+    .filter((k) => (!jf.from || k >= jf.from) && (!jf.to || k <= jf.to))
     .map((k) => {
       const entries = (days[k].entries || []).filter((en) => (en.segments || []).some(segMatches));
       return { key: k, entries };
@@ -4856,7 +5581,8 @@ Digest:
     const k = dayKey(d);
     calCells.push({ key: k, emotion: domEmotions[k] || null });
   }
-  const streak = computeStreak(days);
+  const streakInfo = computeStreakInfo(days, settings.streakFreeze !== false);
+  const streak = streakInfo.streak;
 
   let totalNotes = 0;
   eachSegment(days, () => totalNotes++);
@@ -5971,6 +6697,19 @@ Digest:
         }
       `}</style>
 
+      <style>{LX_CSS}</style>
+      {showSearch && (
+        <GlobalSearch days={days} onClose={() => setShowSearch(false)}
+          onOpenDay={(k, text) => { setShowSearch(false); setView("journal"); setTopicFilter(""); setFavFilter(false); setJf({ ...JF_DEFAULT }); setQuery(text); window.scrollTo(0, 0); }}
+          onOpenNote={(id) => { setShowSearch(false); setNpOpenId(id); setView("notepad"); window.scrollTo(0, 0); }} />
+      )}
+      {showJF && (
+        <JournalFilterSheet f={jf} setF={setJf} onClose={() => setShowJF(false)} matchCount={filteredDays.length}
+          views={Array.isArray(settings.journalViews) ? settings.journalViews : []}
+          onSaveView={(name) => updateSettings({ journalViews: [...(Array.isArray(settings.journalViews) ? settings.journalViews : []), { id: uid(), name, f: jf }].slice(-12) })}
+          onApplyView={(v) => setJf({ ...JF_DEFAULT, ...v.f })}
+          onDeleteView={(id) => updateSettings({ journalViews: (Array.isArray(settings.journalViews) ? settings.journalViews : []).filter((v) => v.id !== id) })} />
+      )}
       <div className="xo-fx" aria-hidden="true"><i className="fx1" /><i className="fx2" /><i className="fx3" /></div>
       <div className="xo-shell">
         <div className="xo-top">
@@ -5998,6 +6737,9 @@ Digest:
             </button>
           </div>
           <span className="xo-spacer" />
+          <button className="lx-searchbtn" onClick={() => setShowSearch(true)} aria-label="Search everything" title="Search journal and notes">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+          </button>
           <button className="xo-gear" onClick={() => setShowCustomize(!showCustomize)}>
             {showCustomize ? "Close" : "Customize"}
           </button>
@@ -6098,6 +6840,69 @@ Digest:
               <style>{AC_CSS}</style>
               <div style={{ marginTop: 8 }}><AIDisclosure /></div>
             </details>
+
+            <label style={{ marginTop: 14 }}>Streak freeze</label>
+            <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+              {[[true, "On"], [false, "Off"]].map(([v, l]) => (
+                <button key={String(v)} className={(settings.streakFreeze !== false) === v ? "xo-topicchip on" : "xo-topicchip"}
+                  onClick={() => updateSettings({ streakFreeze: v })}>{l}</button>
+              ))}
+            </div>
+            <p className="xo-note" style={{ marginTop: 8 }}>
+              One missed day a week won't reset your streak, as long as you wrote the day before and the day after.
+            </p>
+
+            <label style={{ marginTop: 14 }}>Weekly letter</label>
+            <div className="xo-topicchips" style={{ marginBottom: 8 }}>
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((l, i) => (
+                <button key={l} className={(Number.isInteger(settings.letterDay) ? settings.letterDay : 0) === i ? "xo-topicchip on" : "xo-topicchip"}
+                  onClick={() => updateSettings({ letterDay: i })}>{l}</button>
+              ))}
+            </div>
+            <select className="lx-select" aria-label="Weekly letter time"
+              value={Number.isInteger(settings.letterHour) ? settings.letterHour : 0}
+              onChange={(e) => updateSettings({ letterHour: parseInt(e.target.value, 10) })}>
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>{h === 0 ? "12 AM" : h < 12 ? h + " AM" : h === 12 ? "12 PM" : (h - 12) + " PM"}</option>
+              ))}
+            </select>
+            <p className="xo-note" style={{ marginTop: 8 }}>
+              Your AI-written letter arrives the first time you open Lucid after this day and time. It includes a bright spot from your week and an older note worth revisiting.
+            </p>
+
+            <label style={{ marginTop: 14 }}>Saved prompts</label>
+            {savedPrompts.length === 0 ? (
+              <p className="xo-note" style={{ marginTop: 4 }}>Tap ☆ on a prompt in your journal to keep it here. You can reorder them and reuse them any time.</p>
+            ) : (
+              <ul className="lx-promptlist">
+                {savedPrompts.map((p, i) => (
+                  <li key={p.id}>
+                    <span>{p.text}</span>
+                    <button onClick={() => usePrompt(p)}>Use</button>
+                    <button onClick={() => movePrompt(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                    <button onClick={() => movePrompt(i, 1)} disabled={i === savedPrompts.length - 1} aria-label="Move down">↓</button>
+                    <button onClick={() => deletePrompt(p.id)} aria-label="Delete saved prompt">×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {bioAvail && hasPin && (
+              <>
+                <label style={{ marginTop: 14 }}>Face ID</label>
+                <div className="xo-topicchips" style={{ marginBottom: 0 }}>
+                  {[[true, "Unlock with Face ID"], [false, "PIN only"]].map(([v, l]) => (
+                    <button key={String(v)} className={bioOn === v ? "xo-topicchip on" : "xo-topicchip"}
+                      onClick={async () => {
+                        if (v && !(await bioAuthenticate())) return;
+                        setBioOn(v);
+                        try { localStorage.setItem(FACEID_LS, v ? "1" : "0"); } catch (e) { }
+                      }}>{l}</button>
+                  ))}
+                </div>
+                <p className="xo-note" style={{ marginTop: 8 }}>Your PIN still works as a backup. Face ID only replaces typing it.</p>
+              </>
+            )}
 
             <label style={{ marginTop: 14 }}>Web search</label>
             <div className="xo-topicchips" style={{ marginBottom: 0 }}>
@@ -6272,6 +7077,27 @@ Digest:
               <button className="xo-panel-done" style={{ margin: 0 }} onClick={() => setShowCustomize(false)}>Done</button>
             </div>
             {importMsg && <div style={{ marginTop: 10, fontSize: 14, color: importMsg.startsWith("Imported") ? "var(--accent)" : "#FF8B96" }}>{importMsg}</div>}
+
+            {hasEntries && (
+              <div style={{ marginTop: 18 }}>
+                <label style={{ marginTop: 0 }}>Year book</label>
+                <div className="xo-panel-row" style={{ marginTop: 6 }}>
+                  <select className="lx-select" aria-label="Year" value={bookYears.includes(String(bookYear)) ? String(bookYear) : (bookYears[0] || "")}
+                    onChange={(e) => setBookYear(e.target.value)}>
+                    {bookYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <button className="xo-panel-btn" onClick={() => exportBook(bookYears.includes(String(bookYear)) ? String(bookYear) : bookYears[0], "html")} disabled={bookBusy}>
+                    {bookBusy ? "Preparing…" : "Print-ready book (.html)"}
+                  </button>
+                  <button className="xo-panel-btn" onClick={() => exportBook(bookYears.includes(String(bookYear)) ? String(bookYear) : bookYears[0], "md")} disabled={bookBusy}>
+                    Markdown (.md)
+                  </button>
+                </div>
+                <p className="xo-note" style={{ marginTop: 8 }}>
+                  The book has a cover, every month, your moods in color and your photos. Open the file and choose Print, then Save as PDF.
+                </p>
+              </div>
+            )}
 
             <div className="xo-danger">
               <label style={{ marginTop: 0 }}>Delete account</label>
@@ -6478,6 +7304,8 @@ Digest:
               isNarrow={isNarrow}
               autoNew={npAutoNew}
               onAutoNewDone={() => setNpAutoNew(false)}
+              openId={npOpenId}
+              onOpenIdDone={() => setNpOpenId(null)}
               onSendToJournal={sendNoteToJournal}
               onAddSchedule={addNoteSchedule}
               mic={{ listening, transcribing, error, toggle: toggleMic }}
@@ -6617,6 +7445,9 @@ Digest:
 
         {view === "journal" && (
           <>
+            {loaded && (
+              <TodayCard days={days} streakInfo={streakInfo} freezeOn={settings.streakFreeze !== false} onCheckIn={doCheckIn} onWrite={focusComposer} />
+            )}
             {hasEntries && (
               <div className="xo-kpis">
                 <div className="xo-kpi hero"><h4>Day streak</h4><div className="val">{streak}<span className="unit"> day{streak === 1 ? "" : "s"}</span></div></div>
@@ -6631,7 +7462,15 @@ Digest:
               <div className="xo-promptcard">
                 <b>{hasEntries ? "Been thinking about your last entries…" : "Tonight's prompt"}</b>
                 <button className="xo-shuffle" title="Show me something else" aria-label="New prompt" onClick={genWelcome} disabled={welcomeBusy}>↻</button>
+                {!welcomeBusy && welcome && (
+                  <button className={promptSaved ? "lx-star on" : "lx-star"} style={{ position: "absolute", top: 8, right: 42 }}
+                    title={promptSaved ? "Remove from saved prompts" : "Save this prompt"} aria-label={promptSaved ? "Remove from saved prompts" : "Save this prompt"}
+                    onClick={() => togglePromptSaved(welcome)}>{promptSaved ? "★" : "☆"}</button>
+                )}
                 {welcomeBusy ? <span style={{ opacity: 0.6, fontStyle: "italic" }}>reading back through what you wrote…</span> : welcome}
+                {savedPrompts.length > 0 && !welcomeBusy && (
+                  <button className="lx-link" style={{ display: "block", padding: "6px 0 0" }} onClick={cycleSavedPrompt}>★ Saved prompts ({savedPrompts.length}) · next</button>
+                )}
               </div>
             )}
 
@@ -6692,6 +7531,9 @@ Digest:
                 </div>
               </div>
               {error && <div className="xo-error">{error}</div>}
+              {(voiceInfo || voiceQueued > 0) && (
+                <div className="lx-info" role="status">{voiceInfo || (voiceQueued + " voice recording" + (voiceQueued === 1 ? "" : "s") + " waiting for a connection")}</div>
+              )}
             </div>
 
             {hasEntries && (
@@ -6760,6 +7602,17 @@ Digest:
                     </div>
                   )}
                 </div>
+                <button className={jfOn ? "lx-filterbtn on" : "lx-filterbtn"} onClick={() => setShowJF(true)}>Filters{jfOn ? " · " + jfChips(jf).length : ""}</button>
+              </div>
+            )}
+            {hasEntries && jfOn && (
+              <div className="lx-filterchips">
+                {jfChips(jf).map((c) => (
+                  <button key={c.k} className="lx-chip" onClick={() => setJf(jfDrop(jf, c.k))} aria-label={"Remove filter: " + c.label}>
+                    {c.color && <i style={{ background: c.color }} />}{c.label} ×
+                  </button>
+                ))}
+                <button className="lx-link" onClick={() => setJf({ ...JF_DEFAULT })}>Clear</button>
               </div>
             )}
 
@@ -6780,14 +7633,15 @@ Digest:
 
             {loaded && filteredDays.map(({ key: k, entries }, di) => {
               const noteCount = entries.reduce((n, en) => n + en.segments.length, 0);
-              const filtering = !!(q || topicFilter || favFilter);
+              const filtering = !!(q || topicFilter || favFilter || jfOn);
               const open = filtering || (dayCollapsed[k] !== undefined ? !dayCollapsed[k] : di === 0);
               const dayTally = {};
               entries.forEach((en) => (en.segments || []).forEach((s) => { const mm = (s.emotion || "neutral").toLowerCase(); dayTally[mm] = (dayTally[mm] || 0) + 1; }));
               const domTop = Object.entries(dayTally).sort((a, b) => b[1] - a[1])[0];
               const de = domTop ? emotionOf(domTop[0]) : null;
               return (
-              <section className={open ? "xo-daycard open" : "xo-daycard"} key={k}>
+              <section className={open ? "xo-daycard open" : "xo-daycard"} key={k}
+                style={de ? { boxShadow: "inset 3px 0 0 " + de.dot, backgroundImage: "linear-gradient(90deg, " + de.bg + ", transparent 38%)" } : undefined}>
                 <div className="xo-dayhead" onClick={() => setDayCollapsed((prev) => ({ ...prev, [k]: open }))}>
                   <span className="xo-chev">▶</span>
                   <h2>{prettyDate(k)}</h2>
